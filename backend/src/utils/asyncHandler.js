@@ -6,4 +6,5 @@ const asyncHandeler = (requestHandeler)=>{
     }
 }
 
-export {asyncHandeler}
+export default asyncHandeler ; 
+

@@ -24,9 +24,14 @@ connectDB().then(() => {
 
 
 // Routes
+import authRouter from "./src/routes/auth.routes.js"
+app.use("/api/v1/user",authRouter);
 
-app.get("/",(req,res)=>{
-    res.json({
-        message : "server is running"
-    })
-})
+import profileRouter from "./src/routes/profile.route.js"
+app.use("/api/v1/profile",profileRouter)
+
+import suggestionRouter from "./src/routes/suggestion.routes.js"
+app.use("/api/v1/suggestion",suggestionRouter)
+
+import scanRouter from "./src/routes/scan.route.js"
+app.use("/api/v1/scan",scanRouter)
