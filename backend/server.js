@@ -35,3 +35,7 @@ app.use("/api/v1/suggestion",suggestionRouter)
 
 import scanRouter from "./src/routes/scan.route.js"
 app.use("/api/v1/scan",scanRouter)
+
+import wardrobeRouter from "./src/routes/wardrobe.route.js"
+app.use("/api/v1/wardrobe",wardrobeRouter)
+

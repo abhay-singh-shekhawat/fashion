@@ -6,6 +6,11 @@ const bodyProfileSchema = new mongoose.Schema({
         ref : "User",
         required : true
     },
+    skinTone : {
+        type: String,
+        enum: ['warm', 'cool', 'neutral', 'olive', 'unknown'],
+        default: 'unknown'
+    },
     heightCm: {
         type: Number,
         min: 100,

@@ -2,6 +2,8 @@ import BodyProfile from "../models/profile.model.js"
 import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
+import ClothingItem from "../models/clothingItem.model.js"
+import { getRecommendedColors } from "../utils/skinTonePalatte.js"
 
 export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
     const { userId } = req.query;
@@ -78,5 +80,81 @@ export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
       occasion,
       suggestions: suggestions.slice(0, 2),
       basedOn: 'basic rules + current weather'
+    });
+})
+
+export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
+    const { userId } = req.query;
+
+    if (!userId) {
+      throw new api_error(400,"userId required (query param)")
+    }
+
+    const profile = await BodyProfile.findOne({ userId });
+    if (!profile) {
+      throw new api_error(404,"Create your body profile first")
+    }
+
+    const weather = await getWeather();
+    const temp = weather.temperature;
+    const feel = temp < 18 ? 'cold' : temp > 32 ? 'hot' : 'mild';
+
+    // Get wardrobe-based outfit
+    const items = await ClothingItem.find({ userId });
+    let outfit = null;
+    let source = 'wardrobe';
+
+    if (items.length >= 2) {
+      const tops = items.filter(i => i.category === 'top');
+      const bottoms = items.filter(i => i.category === 'bottom');
+
+      if (tops.length > 0 && bottoms.length > 0) {
+        const top = tops[Math.floor(Math.random() * tops.length)];
+        const bottom = bottoms[Math.floor(Math.random() * bottoms.length)];
+        outfit = `${top.name} (${top.color}) + ${bottom.name} (${bottom.color})`;
+      }
+    }
+
+    // Fallback if wardrobe too empty
+    if (!outfit) {
+      source = 'basic generated';
+        if (profile.gender === 'female') {
+          outfit = feel === 'hot' 
+          ? 'Light cotton kurti + leggings' 
+          : feel === 'cold' 
+            ? 'Full-sleeve kurti + jeans + shawl' 
+            : 'Cotton kurti + jeans';
+        } else {
+          outfit = feel === 'hot' 
+          ? 'Cotton t-shirt + jeans' 
+          : feel === 'cold' 
+            ? 'Sweater + trousers' 
+            : 'Casual shirt + jeans';
+        }
+    }
+
+    const scanNote = items.length > 0 
+      ? `Today's outfit based on your wardrobe (last fake scan: ${new Date().toLocaleDateString()})`
+      : 'No recent scan — using basic rules';
+
+    let skinToneNote = '';
+    if (profile.skinTone !== 'unknown') {
+      const palette = getRecommendedColors(profile.skinTone);
+      skinToneNote = `Skin tone tip (${profile.skinTone}): Try more ${palette.best.slice(0, 3).join(', ')} for a flattering glow.`;
+    }
+
+    res.status(200).json({
+      userId,
+      date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      temperature: temp,
+      weatherFeel: feel,
+      recommendation: {
+        outfit,
+        source,
+        message: `Hey Abhay, for ${feel} ${weather.isDay ? 'day' : 'evening'} in Jaipur (~${temp}°C), try: ${outfit}. ${scanNote}`,
+        skinToneNote,
+        confidence: 'moderate (Phase 2 demo)'
+      },
+      note: 'This is the Phase 2 unified daily recommendation — real intelligence starts in Phase 2'
     });
 })
