@@ -20,6 +20,26 @@ const clothingItemSchema = new mongoose.Schema({
         type: String,
         default: 'unknown'
     },
+    formality: {
+        type: String,
+        enum: ['casual', 'smart_casual', 'formal', 'business', 'party', 'sporty', 'traditional', 'unknown'],
+        default: 'unknown'
+    },
+    imageUrl: {
+        type: String,
+        default: null
+    },
+    detectedBy: {
+        type: String,
+        enum: ['manual', 'scanner', 'ai'],
+        default: 'manual'
+    },
+    confidence: {
+        type: Number,
+        min: 0,
+        max: 1,
+        default: 0.85
+    },
 },{timestamps : true});
 
 const ClothingItem = mongoose.model('ClothingItem', clothingItemSchema);

@@ -4,6 +4,10 @@ import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import ClothingItem from "../models/clothingItem.model.js"
 import { getRecommendedColors } from "../utils/skinTonePalatte.js"
+import { awardPoints } from "./progress.controller.js"
+import { getOfflineOutfitSuggestion } from "../utils/offlineSuggestion.js"
+import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';
+
 
 export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
     const { userId } = req.query;
@@ -117,20 +121,10 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
 
     // Fallback if wardrobe too empty
     if (!outfit) {
-      source = 'basic generated';
-        if (profile.gender === 'female') {
-          outfit = feel === 'hot' 
-          ? 'Light cotton kurti + leggings' 
-          : feel === 'cold' 
-            ? 'Full-sleeve kurti + jeans + shawl' 
-            : 'Cotton kurti + jeans';
-        } else {
-          outfit = feel === 'hot' 
-          ? 'Cotton t-shirt + jeans' 
-          : feel === 'cold' 
-            ? 'Sweater + trousers' 
-            : 'Casual shirt + jeans';
-        }
+      source = 'offline_rules';
+      const offline = getOfflineOutfitSuggestion(profile, items);
+      outfit = offline.suggestion;
+      weatherData = offline;
     }
 
     const scanNote = items.length > 0 
@@ -143,6 +137,8 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
       skinToneNote = `Skin tone tip (${profile.skinTone}): Try more ${palette.best.slice(0, 3).join(', ')} for a flattering glow.`;
     }
 
+    await awardPoints(userId, 5, 'daily_suggestion');
+
     res.status(200).json({
       userId,
       date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
@@ -151,10 +147,32 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
       recommendation: {
         outfit,
         source,
-        message: `Hey Abhay, for ${feel} ${weather.isDay ? 'day' : 'evening'} in Jaipur (~${temp}°C), try: ${outfit}. ${scanNote}`,
-        skinToneNote,
-        confidence: 'moderate (Phase 2 demo)'
+        message: `Hey Abhay, for ${weatherData.weatherFeel || feel} ${weatherData.isDay ? 'day' : 'evening'} (~${weatherData.temperature}°C), try: ${outfit}`,
+        weatherSource: weatherData.source || 'online'
       },
       note: 'This is the Phase 2 unified daily recommendation — real intelligence starts in Phase 2'
     });
 })
+
+export const getShoppingSuggestions = asyncHandeler(async (req, res) => {
+    const { userId } = req.query;
+
+    if (!userId) {
+        throw new api_error(400,"userId is required")
+    }
+
+    const profile = await BodyProfile.findOne({ userId });
+    if (!profile) {
+        throw new api_error(404,"Create your body profile first")
+    }
+
+    const wardrobeItems = await ClothingItem.find({ userId }).sort({ addedAt: -1 });
+
+    const shopping = generateShoppingSuggestions(profile, wardrobeItems);
+
+    res.status(200).json({
+        userId,
+        wardrobeSize: wardrobeItems.length,
+        ...shopping
+    });
+  })

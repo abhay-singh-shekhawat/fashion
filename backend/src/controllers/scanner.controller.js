@@ -2,6 +2,7 @@ import BodyProfile from "../models/profile.model.js"
 import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
+import { awardPoints } from "./progress.controller.js"
 
 const detectOutfit = async(imagePath)=>{
     // Possible fake types
@@ -34,36 +35,38 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
 
     const detection = detectOutfit(req.file.path)
     const weather = await getWeather();
-    const temp = weoutfitather.temperature
+    const temp = weather.temperature
 
-    let tempFeel = "mild"
-    if(temp < 18) tempFeel = "cold"
-    if(temp > 32) tempFeel = "hot"
-
-    // Hard coded scannig output
-    let suggestion = 'Based on scanned outfit and weather, ';
-    if (detection.formalityLevel === 'casual') {
-        suggestion += 'this casual look works well for ';
-    } else {
-        suggestion += 'this semi-formal outfit is suitable for ';
+ // Auto-save detected items to wardrobe
+    const savedItems = [];
+    for (const item of detection.detectedItems) {
+        const newItem = new ClothingItem({
+            userId,
+            name: `${item.color} ${item.type}`,
+            category: item.type.includes('shirt') || item.type.includes('kurti') || item.type.includes('t-shirt') ? 'top' : 'bottom',
+            color: item.color,
+            formality: detection.formalityLevel,
+            imageUrl: `/uploads/${req.file.filename}`,
+            detectedBy: 'scanner',
+            confidence: item.confidence
+      });
+      await newItem.save();
+      savedItems.push(newItem);
     }
 
-    if (tempFeel === 'hot') {
-        suggestion += 'hot weather — consider lighter layers if possible.';
-    } else if (tempFeel === 'cold') {
-        suggestion += 'cold weather — add a jacket or sweater.';
-    } else {
-        suggestion += 'mild weather — perfect as is!';
-    }
+    // Award points for scanning
+    await awardPoints(userId, 15, 'outfit_scanned');
 
     res.status(200).json({
         userId,
-        uploadedImage: req.file.filename, // just name for now
-        detection,                        // fake result
-        weather: { temperature: temp, feel: tempFeel },
-        basicSuggestion: suggestion,
-        note: 'Scanner is stubbed — real detection coming in Phase 2'
+        uploadedImage: req.file.filename,
+        detection,
+        savedItemsCount: savedItems.length,
+        weather: {
+          temperature: weather.temperature,
+          feel: weather.source === 'offline_fallback' ? 'offline' : 'online'
+        },
+        message: `${savedItems.length} items automatically added to your wardrobe from scan`,
+        note: 'Scanner is still using fake detection. Real YOLOv8 coming soon.'
     });
 })
-
-
