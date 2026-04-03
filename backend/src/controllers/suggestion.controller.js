@@ -10,7 +10,7 @@ import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';
 
 
 export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
-    const { userId } = req.query;
+    const userId  = req.user.id;
 
     if (!userId) {
         throw new api_error(400,"userId is essential for suggestions")
@@ -88,7 +88,7 @@ export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
 })
 
 export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
-    const { userId } = req.query;
+    const userId  = req.user.id;
 
     if (!userId) {
       throw new api_error(400,"userId required (query param)")
@@ -155,7 +155,7 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
 })
 
 export const getShoppingSuggestions = asyncHandeler(async (req, res) => {
-    const { userId } = req.query;
+    const userId  = req.user.id;
 
     if (!userId) {
         throw new api_error(400,"userId is required")

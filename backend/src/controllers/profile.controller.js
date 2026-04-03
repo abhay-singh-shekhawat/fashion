@@ -4,7 +4,7 @@ import asyncHandler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 
 export const createOrUpdateProfile = asyncHandler(async(req,res,next)=>{
-    const { userId } = req.body;
+    const userId  = req.user.id;
     if (!userId) {
       throw new api_error(404,"user not found")
     }
@@ -28,7 +28,7 @@ export const createOrUpdateProfile = asyncHandler(async(req,res,next)=>{
 })
 
 export const getProfile = asyncHandler(async(req,res,next) => {
-    const { userId } = req.params;
+    const userId  = req.user.id;
     if(!mongoose.Types.ObjectId.isValid(userId)){
         throw new api_error(400,"object id is invalid")
     }

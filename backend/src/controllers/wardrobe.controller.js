@@ -20,7 +20,8 @@ const occasionToFormalities = {
 };
 
 export const addClothingItem = asyncHandeler(async(req,res,next)=>{
-    const { userId, name, category, color, formality} = req.body;
+    const userId = req.user.id
+    const { name, category, color, formality} = req.body;
 
     if (!userId || !name || !category) {
       throw new api_error(400,"userId, name, and category are required")
@@ -45,7 +46,7 @@ export const addClothingItem = asyncHandeler(async(req,res,next)=>{
 })
 
 export const getWardrobe = asyncHandeler(async(req,res,next)=>{
-    const { userId } = req.query;
+    const userId = req.user.id;
 
     if (!userId) {
       throw new api_error(400,"userId required (query param)")
@@ -57,7 +58,7 @@ export const getWardrobe = asyncHandeler(async(req,res,next)=>{
 })
 
 export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
-    const { userId } = req.query;
+    const userId = req.user.id;
 
     if (!userId) {
       throw new api_error(400,"userId required")
@@ -187,7 +188,8 @@ export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
 })
 
 export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
-    const { userId, occasion = 'casual' } = req.query;
+    const userId = req.user.id
+    const { occasion = 'casual' } = req.query;
 
     if (!userId) {
       throw new api_error(400,"userId required")

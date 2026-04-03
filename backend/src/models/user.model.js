@@ -32,7 +32,8 @@ userSchema.methods.generateAccessToken = function() {
 };
 userSchema.methods.generateRefreshToken = function() {
     const refreshToken = jwt.sign({ id: this._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
-    this.refreshToken = refreshToken;
+    const hashedRefreshToken = bcrypt.hash(refreshToken,30)
+    this.refreshToken = hashedRefreshToken;
     this.save();
     return refreshToken;
 }

@@ -4,7 +4,7 @@ import { api_error } from "../utils/errorHandler.js";
 import asyncHandeler from "../utils/asyncHandler.js";
 
 export const getProgress = asyncHandeler(async(req,res,next)=>{
-    const { userId } = req.query;
+    const userId  = req.user.id;
 
     if (!userId) {
         throw new api_error(400,"userId required")

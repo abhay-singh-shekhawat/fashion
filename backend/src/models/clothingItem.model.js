@@ -29,6 +29,10 @@ const clothingItemSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    publicId: { 
+        type: String, 
+        required: true 
+    },
     detectedBy: {
         type: String,
         enum: ['manual', 'scanner', 'ai'],

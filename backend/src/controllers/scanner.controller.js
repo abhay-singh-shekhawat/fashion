@@ -3,6 +3,7 @@ import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import { awardPoints } from "./progress.controller.js"
+import cloudinary from "../configs/cloudinary.js"
 
 const detectOutfit = async(imagePath)=>{
     // Possible fake types
@@ -21,7 +22,7 @@ const detectOutfit = async(imagePath)=>{
 };
 
 export const scanOutfit = asyncHandeler(async(req,res,next)=>{
-    const { userId } = req.body;
+    const userId  = req.user.id;
     if (!userId) {
         throw new api_error(400,"userId is required")
     }
@@ -32,6 +33,16 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
     if (!req.file) {
         throw new api_error(400,"No image uploaded")
     }
+
+    const publicId = `scan_${userId}_${Date.now()}`
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+      {
+        folder: 'fashion/scan',
+        public_id: publicId,
+        overwrite: false,
+      }
+    );
 
     const detection = detectOutfit(req.file.path)
     const weather = await getWeather();
@@ -46,7 +57,8 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
             category: item.type.includes('shirt') || item.type.includes('kurti') || item.type.includes('t-shirt') ? 'top' : 'bottom',
             color: item.color,
             formality: detection.formalityLevel,
-            imageUrl: `/uploads/${req.file.filename}`,
+            imageUrl: uploadResult.secure_url,
+            publicId: uploadResult.public_id,
             detectedBy: 'scanner',
             confidence: item.confidence
       });
@@ -59,7 +71,8 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
 
     res.status(200).json({
         userId,
-        uploadedImage: req.file.filename,
+        uploadedImageUrl: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
         detection,
         savedItemsCount: savedItems.length,
         weather: {
