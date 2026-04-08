@@ -1,9 +1,10 @@
 import BodyProfile from "../models/profile.model.js"
-import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import { awardPoints } from "./progress.controller.js"
 import cloudinary from "../configs/cloudinary.js"
+import crypto from "crypto"
+import { scanQueue } from "../configs/queue.js"
 
 const detectOutfit = async(imagePath)=>{
     // Possible fake types
@@ -44,42 +45,33 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
       }
     );
 
-    const detection = detectOutfit(req.file.path)
-    const weather = await getWeather();
-    const temp = weather.temperature
+    const imageHash = crypto
+        .createHash('sha256')
+        .update(req.file.buffer)
+        .digest('hex');
 
- // Auto-save detected items to wardrobe
-    const savedItems = [];
-    for (const item of detection.detectedItems) {
-        const newItem = new ClothingItem({
-            userId,
-            name: `${item.color} ${item.type}`,
-            category: item.type.includes('shirt') || item.type.includes('kurti') || item.type.includes('t-shirt') ? 'top' : 'bottom',
-            color: item.color,
-            formality: detection.formalityLevel,
-            imageUrl: uploadResult.secure_url,
-            publicId: uploadResult.public_id,
-            detectedBy: 'scanner',
-            confidence: item.confidence
-      });
-      await newItem.save();
-      savedItems.push(newItem);
-    }
+    await scanQueue.add(`process-scan`,{
+        userId,
+        imageUrl: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+        imageHash: imageHash,
+        originalFileName: req.file.originalname
+    },{
+        attempts: 3,
+        backoff: {type: `exponential` , delay: 5000},
+        removeOnComplete: true,
+        removeOnFail: false
+    })
 
-    // Award points for scanning
-    await awardPoints(userId, 15, 'outfit_scanned');
+    // Award points for scan uploading
+    await awardPoints(userId, 8, 'scan_uploaded');
 
     res.status(200).json({
-        userId,
+        success: true,
+        message: "Scan job queued successfully. Processing in background...",
+        jobId: publicId,
         uploadedImageUrl: uploadResult.secure_url,
         publicId: uploadResult.public_id,
-        detection,
-        savedItemsCount: savedItems.length,
-        weather: {
-          temperature: weather.temperature,
-          feel: weather.source === 'offline_fallback' ? 'offline' : 'online'
-        },
-        message: `${savedItems.length} items automatically added to your wardrobe from scan`,
-        note: 'Scanner is still using fake detection. Real YOLOv8 coming soon.'
+        note: "You will be notified when processing is complete. Real YOLOv8 coming soon."
     });
 })

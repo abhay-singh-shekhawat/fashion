@@ -7,6 +7,7 @@ import { getRecommendedColors } from "../utils/skinTonePalatte.js"
 import { awardPoints } from "./progress.controller.js"
 import { getOfflineOutfitSuggestion } from "../utils/offlineSuggestion.js"
 import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';
+import { setCache , getCache , generateCacheKey } from "../utils/cache.js"
 
 
 export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
@@ -90,6 +91,12 @@ export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
 export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
     const userId  = req.user.id;
 
+    const cacheKey = generateCacheKey("daily_rec",userId)
+    const cachedRecommendation = await getCache(cacheKey)
+    if(cachedRecommendation){
+      return res.status(200).json(cachedRecommendation)
+    }
+
     if (!userId) {
       throw new api_error(400,"userId required (query param)")
     }
@@ -139,7 +146,7 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
 
     await awardPoints(userId, 5, 'daily_suggestion');
 
-    res.status(200).json({
+    const responseData = {
       userId,
       date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
       temperature: temp,
@@ -149,7 +156,13 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
         source,
         message: `Hey Abhay, for ${weatherData.weatherFeel || feel} ${weatherData.isDay ? 'day' : 'evening'} (~${weatherData.temperature}°C), try: ${outfit}`,
         weatherSource: weatherData.source || 'online'
-      },
+      }
+    }
+
+    await setCache(cacheKey,responseData,1800)
+
+    res.status(200).json({
+      responseData,
       note: 'This is the Phase 2 unified daily recommendation — real intelligence starts in Phase 2'
     });
 })

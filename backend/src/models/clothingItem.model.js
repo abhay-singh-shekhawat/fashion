@@ -33,6 +33,10 @@ const clothingItemSchema = new mongoose.Schema({
         type: String, 
         required: true 
     },
+    imageHash: {
+        type: String,
+        index: true
+    },
     detectedBy: {
         type: String,
         enum: ['manual', 'scanner', 'ai'],
