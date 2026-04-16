@@ -2,6 +2,7 @@ import dotenv from "dotenv"
 dotenv.config()
 
 import { createClient } from 'redis';
+import IORedis from 'ioredis';
 
 const client = createClient({
     username: 'default',
@@ -36,4 +37,20 @@ client.on('reconnecting', () => {
   }
 })();
 
-export default client
+const bullMqConnection = new IORedis({
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT),
+    username: 'default',
+    password: process.env.REDIS_PASSWORD,
+    // tls: {},
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    connectTimeout: 15000,
+    keepAlive: 10000,
+});
+
+bullMqConnection.on('error', (err) => {
+    console.error('BullMQ Redis Error:', err.message);
+});
+
+export { client as default, bullMqConnection };

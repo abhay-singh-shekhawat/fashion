@@ -1,5 +1,5 @@
 import {Worker} from "bullmq"
-import { scanQueue } from "../configs/queue.js"
+import { scanQueuelite } from "../configs/queue.js"
 import ClothingItem from "../models/clothingItem.model.js"
 import { awardPoints } from "../controllers/progress.controller.js"
 import crypto from "crypto"
@@ -7,20 +7,14 @@ import {GoogleGenerativeAI} from "@google/generative-ai"
 
 const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-const scanWorker = new Worker(`outfit-scan`,async(job)=>{
+const scanWorker = new Worker(`process-scan`,async(job)=>{
     const { userId, imageUrl, publicId, imageHash } = job.data;
     try {
-        const alreadyProcessed = await ClothingItem.exists({ publicId });
-        if (alreadyProcessed) {
-            console.log(`Job ${job.id} already processed - skipping duplicate`);
-            return { status: 'already_processed' };
-        }
-
         // Image-level deduplication
         const duplicateImage = await ClothingItem.exists({ userId, imageHash });
         if (duplicateImage) {
             console.log(`Duplicate image detected for user ${userId} - skipping`);
-            return { status: 'duplicate_image' };
+            return { status: 'we have already told about the same outfit' };
         }
 
         const model = genAi.getGenerativeModel({model: `gemini-3.1-flash-lite`})
@@ -53,34 +47,14 @@ const scanWorker = new Worker(`outfit-scan`,async(job)=>{
           throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
         }
 
-        const savedItems = [];
-        for (const item of analysis.detectedItems) {
-            const newItem = new ClothingItem({
-                userId,  
-                name: `${item.color} ${item.type}`,
-                category: item.type === 'shirt' ? 'top' : 'bottom',
-                color: item.color,
-                formality: item.formalityLevel,
-                imageUrl: imageUrl,           // from Cloudinary
-                publicId: publicId,           // from Cloudinary + job
-                imageHash: imageHash,         // for deduplication
-                detectedBy: 'scanner',
-                confidence: item.confidence
-            });
-            await newItem.save();
-            savedItems.push(newItem);
-        }
-
-        await awardPoints(userId, 15, 'outfit_scanned');
-
-        console.log(`Scan job ${job.id} completed - ${savedItems.length} items added`);
-        return { success: true, itemsAdded: savedItems.length };
+        console.log(`Scan job ${job.id} completed - ${analysis.detectedItems.length} items added`);
+        return { success: true, items: analysis.detectedItems};
     } catch (error) {
         console.error(`Scan job ${job.id} failed:`, error.message);
         throw error;
     }
     },{
-        connection: scanQueue.opts.connection,
+        connection: scanQueuelite.opts.connection,
         concurrency: 2,
         attempts: 3,
         backoff: { type: `exponential`, delay: 5000}

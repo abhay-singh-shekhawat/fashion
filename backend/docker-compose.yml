@@ -23,7 +23,7 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    restarts: unless-stoped
+    # restarts: unless-stoped
 
 volumes:
   redis_data:

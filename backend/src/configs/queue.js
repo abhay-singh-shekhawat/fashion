@@ -1,12 +1,12 @@
 import {Queue} from "bullmq"
-import redis from "./redis.js"
-import { connection } from "mongoose"
+import {bullMqConnection} from "./redis.js"
 
 const connection = {
-    connection: redis,
+    connection: bullMqConnection,
     prefix: "stylesence"
 }
 
 export const scanQueue = new Queue(`outfit-scan`,connection)
+export const scanQueuelite = new Queue(`outfit-scan`,connection)
 
 export default {scanQueue}

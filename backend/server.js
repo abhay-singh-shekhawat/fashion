@@ -6,6 +6,7 @@ import cors from "cors"
 import  connectDB  from "./src/configs/db.js"
 import errorHandler from "./src/middlewares/errorHandler.js"
 import rateLimit from "express-rate-limit"
+import os from "os"
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -26,6 +27,11 @@ const limiter = rateLimit({
 app.use(limiter);
 
 app.use(errorHandler)
+
+// Start background workers
+import('./src/workers/scanWorker.js').catch(err => {
+  console.error('Failed to start scan worker:', err);
+});
 
 connectDB().then(() => {
     console.log("Connected to MongoDB")
@@ -53,7 +59,3 @@ app.use("/api/v1/scan",scanRouter)
 
 import wardrobeRouter from "./src/routes/wardrobe.routes.js"
 app.use("/api/v1/wardrobe",wardrobeRouter)
-
-import chatRouter from "./src/routes/chat.routes.js"
-app.use("/api/v1/use",chatRouter)
-
