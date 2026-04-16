@@ -1,4 +1,4 @@
-import {getDailyRecommendations} from "../controllers/suggestion.controller.js"
+import {getDailyRecommendations, getOutfitSuggestion, getShoppingSuggestions} from "../controllers/suggestion.controller.js"
 import {getWardrobe} from "../controllers/wardrobe.controller.js"
 import {getProgress} from "../controllers/progress.controller.js"
 import scanWorker from "../workers/scanWorkerLite.js"
@@ -50,10 +50,36 @@ export const tools = {
       properties: {
         userId: { type: "string", description: "User ID" }
       },
+      required: ["userId","imageurl"]
+    }
+  },
+
+  get_shopping_suggestions: {
+    name: "get_shopping_suggestions",
+    description: "Suggest what clothing items the user should buy to improve their wardrobe",
+    parameters: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "User ID" }
+      },
       required: ["userId"]
+    }
+  },
+
+  get_outfit_suggestion: {
+    name: "get_outfit_suggestion",
+    description: "Give outfit suggestions for a specific occasion like office, party, gym, date, interview",
+    parameters: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "User ID" },
+        occasion: { type: "string", description: "Occasion name (office, party, gym, date, interview, casual, traditional)" }
+      },
+      required: ["userId", "occasion"]
     }
   }
 };
+
 
 export const toolExecutors = {
   get_daily_recommendation: async (args) => {
@@ -67,7 +93,8 @@ export const toolExecutors = {
       const result = await getDailyRecommendations(req, res);
       return result;
     } catch (error) {
-      return { error: "Failed to get daily recommendation" };
+      console.log(error,"error in daily recommendation tool")
+      return `Failed to get daily recommendation tool`
     }
   },
 
@@ -81,13 +108,14 @@ export const toolExecutors = {
       const result = await getWardrobe(req, res);
       return result;
     } catch (error) {
-      return { error: "Failed to fetch wardrobe" };
+      console.log(error,"error in get wardrob tool")
+      return `Failed to fetch wardrobe tool`
     }
   },
 
   get_progress: async (args) => {
     try {
-      const req = { query: { userId: args.userId } };
+      const req = { user: { id: args.userId } };
       const res = { json: (data) => data,
         status: (code) => ({ json: (data) => data })
        };
@@ -95,7 +123,8 @@ export const toolExecutors = {
       const result = await getProgress(req, res);
       return result;
     } catch (error) {
-      return { error: "Failed to get progress" };
+      console.log(error,`error in get progress tool`)
+      return `Failed to get progress`
     }
   },
 
@@ -103,10 +132,11 @@ export const toolExecutors = {
     try {
       // Queue the scan job (you already have this in scanQueue)
       const userId = args.userId
+      const imageUrl = args.imageUrl
 
       const publicId = `scan_${userId}_${Date.now()}`
       const uploadResult = await cloudinary.uploader.upload(
-        `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+        imageUrl,
         {
           folder: 'fashion/scan',
           public_id: publicId,
@@ -136,7 +166,36 @@ export const toolExecutors = {
         status: "processing"
       };
     } catch (error) {
-      return { error: "Failed to queue scan job" };
+      console.log(error,`error in scan tool`)
+      return `Failed to scan image`
+    }
+  },
+
+  get_shopping_suggestions: async (args) => {
+    try {
+      const req = { user: { id: args.userId } }
+      const res = { json: (data) => data ,
+          status: (code) => ({ json: (data) => data })
+        };
+      const result = await getShoppingSuggestions(req,res)
+      return result
+    } catch (error) {
+      console.log(error,"error in shopping suggestion tool")
+      return `failed to fetch shopping suggestion`
+    }
+  },
+
+  get_outfit_suggestion: async (args) => {
+    try {
+      const req = { user: { id: args.userId }, body: args.args?.occasion }
+      const res = { json: (data) => data ,
+        status: (code) => ({ json: (data) => data })
+      }
+      const result = await getOutfitSuggestion(req,res)
+      return result 
+    } catch (error) {
+      console.log(error,`error in outfit suggestion tool`)
+      return `failed to fetch outfit suggestions`
     }
   }
 };

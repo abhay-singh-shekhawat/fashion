@@ -89,7 +89,7 @@ export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
 })
 
 export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
-    const userId  = req.user.id;
+    const userId  = req.user.id
 
     const cacheKey = generateCacheKey("daily_rec",userId)
     const cachedRecommendation = await getCache(cacheKey)

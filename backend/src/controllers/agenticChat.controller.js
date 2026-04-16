@@ -7,16 +7,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const model = genAI.getGenerativeModel({
   model: "gemini-3.1-flash-lite",
+  tools: tools,
   systemInstruction: `You are StyleSense, a friendly, expert, and highly fashionable AI personal stylist.
 You help users with outfit suggestions, wardrobe management, color matching, occasion-based styling, shopping advice, and style progress tracking.
-
-You have access to these tools:
-- get_daily_recommendation → Get today's best outfit suggestion
-- get_wardrobe → Show what clothes the user owns
-- get_progress → Show style level, points, streak and motivational message
-- scan_outfit → Queue an outfit scan for AI analysis
-- get_shopping_suggestions → Suggest what items the user should buy to improve their wardrobe
-- get_occasion_suggestion → Give outfit ideas for a specific occasion (office, party, gym, date, etc.)
 
 Rules:
 - Be warm, positive, practical and stylish.
@@ -31,85 +24,67 @@ Rules:
 Always respond in a natural, conversational way after using tools.`
 });
 
+let conversationHistory = new Map();
+
 export const agenticChat = asyncHandeler(async(req,res,next) => {
-  try {
     const { userId, message } = req.body;
+    const mimetype = req.file?.mimetype;
+    const buffer = req.file?.buffer.toString('base64');
+    const imageUrl = buffer ? `data:${mimetype};base64,${buffer}` : null;
 
     if (!userId || !message) {
       throw new api_error(400,"userId and message are required")
     }
 
-    const chat = model.startChat({ history: [] });
-
-    const prompt = `
-    User: "${message}"
-
-    Analyze the message and decide which tool(s) to use. Respond with valid JSON only:
-
-    {
-      "needsTool": true/false,
-      "tools": ["tool_name1", "tool_name2"] or [],
-      "reasoning": "brief explanation why you chose these tools",
-      "directResponse": "your stylish reply if no tool is needed"
+    if (!conversationHistory.has(userId)) {
+      conversationHistory.set(userId, []);
     }
-    `;
+    const history = conversationHistory.get(userId);
 
-    const result = await chat.sendMessage(prompt);
-    let decision;
+    const chat = model.startChat({
+      history: history.slice(-10), // keep last 10 messages for context
+      generationConfig: { temperature: 0.75 }
+    });
 
-    try {
-      decision = JSON.parse(result.response.text());
-    } catch (e) {
-      decision = { 
-        needsTool: false, 
-        directResponse: "Hi! I'm StyleSense, your AI stylist. How can I help with your outfit today?" 
-      };
-    }
+    // Add current message to history
+    history.push({ role: "user", content: message });
 
-    let finalReply = decision.directResponse || "";
+    const result = await chat.sendMessage(message);
 
-    if (decision.needsTool && decision.tools && decision.tools.length > 0) {
-      const toolResults = [];
+    let finalReply = "";
+    
+    while(true){
+      const parts = result.response.candidates[0].content.parts;
 
-      for (const toolName of decision.tools) {
-        if (toolExecutors[toolName]) {
-          try {
-            const result = await toolExecutors[toolName]({ userId });
-            toolResults.push({ tool: toolName, result });
-          } catch (err) {
-            toolResults.push({ tool: toolName, error: "Tool failed" });
-          }
-        }
+      const functionCall = parts.find(f => f.functionCall)?.functionCall
+
+      if (!functionCall) {
+        finalReply = response.response.text();
+        break;
       }
 
-      const secondPrompt = `
-      User message: "${message}"
+      const { name, args } = functionCall;
 
-      You previously decided to use tools for this request.
-
-      Tool results:
-      ${JSON.stringify(toolResults, null, 2)}
-
-      Now generate a final, natural, stylish response for the user.
-      - Do NOT mention tools
-      - Do NOT show raw JSON
-      - Just give a clean, helpful answer
-      `;
-
-      const finalResult = await chat.sendMessage(secondPrompt);
-
-      const finalReply = finalResult.response.text();
+      if(args.imageUrl){
+        const toolResult = toolExecutors[name]({ userId, imageUrl })
+      } else{
+        const toolResult = toolExecutors[name]({ userId, args })
+      }
+      response = await chat.sendMessage([
+        {
+          functionResponse: {
+            name,
+            response: toolResult
+          }
+        }
+      ]);
     }
+
+      history.push({ role: "assistant", content: finalReply });
 
     res.status(200).json({
       userId,
       reply: finalReply.trim(),
-      toolsUsed: decision.tools || [],
-      reasoning: decision.reasoning
     });
 
-  } catch (error) {
-    console.error("Agentic chat error:", error);
-    res.status(500).json({ error: "Sorry, I couldn't process that request right now." });
-  }
 })

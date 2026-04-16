@@ -47,7 +47,7 @@ const scanWorker = new Worker(`process-scan`,async(job)=>{
           throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
         }
 
-        console.log(`Scan job ${job.id} completed - ${analysis.detectedItems.length} items added`);
+        console.log(`Scan job ${job.id} completed - Item Data: ${analysis.detectedItems.length}`);
         return { success: true, items: analysis.detectedItems};
     } catch (error) {
         console.error(`Scan job ${job.id} failed:`, error.message);

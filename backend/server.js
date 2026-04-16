@@ -59,3 +59,6 @@ app.use("/api/v1/scan",scanRouter)
 
 import wardrobeRouter from "./src/routes/wardrobe.routes.js"
 app.use("/api/v1/wardrobe",wardrobeRouter)
+
+import agenticChat from "./src/routes/chatAgent.routes.js"
+app.use("/api/v1/agent",agenticChat)
