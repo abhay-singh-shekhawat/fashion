@@ -8,163 +8,91 @@ import { awardPoints } from "./progress.controller.js"
 import { getOfflineOutfitSuggestion } from "../utils/offlineSuggestion.js"
 import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';
 import { setCache , getCache , generateCacheKey } from "../utils/cache.js"
+import { generateAIOutfit } from "../utils/aiOutfitEngine.js"
 
+export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
+  const userId = req.user.id;
+  const { occasion } = req.body
 
-export const getOutfitSuggestion = asyncHandeler(async(req,resizeBy,next)=>{
-    const userId  = req.user.id;
+  const cacheKey = generateCacheKey("occasion_sug", userId);
+  const cached = await getCache(cacheKey);
+  if (cached) return res.status(200).json(cached);
 
-    if (!userId) {
-        throw new api_error(400,"userId is essential for suggestions")
-    }
+  const profile = await BodyProfile.findOne({ userId });
+  if (!profile) throw new api_error(404, "create a profile");
 
-    const profile = await BodyProfile.findOne({ userId });
+  const weather = await getWeather();
 
-    if (!profile) {
-        throw new api_error(404,"create a profile")
-    }
+  const aiResult = await generateAIOutfit({
+    profile,
+    weather,
+    wardrobe: [],
+    occasion: occasion || "casual daily",
+  });
 
-    const weather = await getWeather();
-    const temp = weather.temperature;
+  let weatherNote = `It's currently ~${weather.temperature}°C in Jaipur`;
+  if (!weather.isDay) weatherNote += " (night time — consider layers)";
 
-    // Hard coded temperature
-    let tempFeel = 'mild';
-    if (temp < 18) tempFeel = 'cold';
-    else if (temp > 32) tempFeel = 'hot';
+  const responseData = {
+    userId,
+    temperature: weather.temperature,
+    weatherNote,
+    occasion: occasion || "casual daily",
+    suggestions: aiResult.outfits,
+    basedOn: aiResult.source || "ai"
+  };
 
-    // Fake occasion — later real input
-    const occasion = 'casual daily';
+  await awardPoints(userId, 5, 'occasion_sug');
 
-    // Hard coded suggestion
-    let suggestions = [];
+  await setCache(cacheKey, responseData, 1800);
 
-    if (profile.gender === 'female') {
-      if (tempFeel === 'hot') {
-        suggestions = [
-          'Light cotton kurti + palazzo pants + dupatta (optional)',
-          'Short kurti + leggings + minimal jewellery'
-        ];
-      } else if (tempFeel === 'cold') {
-        suggestions = [
-          'Full-sleeve kurti + jeans + light jacket or shawl',
-          'Sweater + salwar kameez'
-        ];
-      } else {
-        suggestions = [
-          'Cotton kurti + churidar or jeans',
-          'Casual top + palazzo or skirt'
-        ];
-      }
-    } else {
-      // For males
-      if (tempFeel === 'hot') {
-        suggestions = [
-          'Cotton t-shirt + jeans / chinos',
-          'Polo shirt + shorts (if very hot)'
-        ];
-      } else if (tempFeel === 'cold') {
-        suggestions = [
-          'Full-sleeve shirt + jeans + light jacket',
-          'Sweater + trousers'
-        ];
-      } else {
-        suggestions = [
-          'Casual shirt + jeans',
-          'T-shirt + chinos or jeans'
-        ];
-      }
-    }
-
-    // Weather-aware note
-    let weatherNote = `It's currently ~${temp}°C in Jaipur — ${tempFeel} feel.`;
-    if (!weather.isDay) weatherNote += ' (night time — consider slightly warmer layers)';
-
-    res.status(200).json({
-      userId,
-      temperature: temp,
-      weatherNote,
-      occasion,
-      suggestions: suggestions.slice(0, 2),
-      basedOn: 'basic rules + current weather'
-    });
+  res.status(200).json({
+    responseData,
+    note: "AI-powered occasion suggestion"
+  });
 })
 
 export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
-    const userId  = req.user.id
+   const userId = req.user.id;
 
-    const cacheKey = generateCacheKey("daily_rec",userId)
-    const cachedRecommendation = await getCache(cacheKey)
-    if(cachedRecommendation){
-      return res.status(200).json(cachedRecommendation)
+  const cacheKey = generateCacheKey("daily_rec", userId);
+  const cached = await getCache(cacheKey);
+  if (cached) return res.status(200).json(cached);
+
+  const profile = await BodyProfile.findOne({ userId });
+  if (!profile) throw new api_error(404, "Create profile");
+
+  const weather = await getWeather();
+  const items = await ClothingItem.find({ userId });
+
+  const aiResult = await generateAIOutfit({
+    profile,
+    weather,
+    wardrobe: items,
+    occasion: "daily wear",
+  });
+
+  const responseData = {
+    userId,
+    date: new Date().toLocaleDateString('en-IN'),
+    temperature: weather.temperature,
+    weatherFeel: weather.temperature < 18 ? 'cold' : weather.temperature > 32 ? 'hot' : 'mild',
+    recommendation: {
+      outfit: aiResult.outfits[0],   // pick best one
+      source: aiResult.source,
+      message: `For ${weather.temperature}°C, try: ${aiResult.outfits[0]}`,
+      weatherSource: "ai"
     }
+  };
 
-    if (!userId) {
-      throw new api_error(400,"userId required (query param)")
-    }
+  await awardPoints(userId, 5, 'daily_recommendation');
 
-    const profile = await BodyProfile.findOne({ userId });
-    if (!profile) {
-      throw new api_error(404,"Create your body profile first")
-    }
+  await setCache(cacheKey, responseData, 1800);
 
-    const weather = await getWeather();
-    const temp = weather.temperature;
-    const feel = temp < 18 ? 'cold' : temp > 32 ? 'hot' : 'mild';
-
-    // Get wardrobe-based outfit
-    const items = await ClothingItem.find({ userId });
-    let outfit = null;
-    let source = 'wardrobe';
-
-    if (items.length >= 2) {
-      const tops = items.filter(i => i.category === 'top');
-      const bottoms = items.filter(i => i.category === 'bottom');
-
-      if (tops.length > 0 && bottoms.length > 0) {
-        const top = tops[Math.floor(Math.random() * tops.length)];
-        const bottom = bottoms[Math.floor(Math.random() * bottoms.length)];
-        outfit = `${top.name} (${top.color}) + ${bottom.name} (${bottom.color})`;
-      }
-    }
-
-    // Fallback if wardrobe too empty
-    if (!outfit) {
-      source = 'offline_rules';
-      const offline = getOfflineOutfitSuggestion(profile, items);
-      outfit = offline.suggestion;
-      weatherData = offline;
-    }
-
-    const scanNote = items.length > 0 
-      ? `Today's outfit based on your wardrobe (last fake scan: ${new Date().toLocaleDateString()})`
-      : 'No recent scan — using basic rules';
-
-    let skinToneNote = '';
-    if (profile.skinTone !== 'unknown') {
-      const palette = getRecommendedColors(profile.skinTone);
-      skinToneNote = `Skin tone tip (${profile.skinTone}): Try more ${palette.best.slice(0, 3).join(', ')} for a flattering glow.`;
-    }
-
-    await awardPoints(userId, 5, 'daily_suggestion');
-
-    const responseData = {
-      userId,
-      date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
-      temperature: temp,
-      weatherFeel: feel,
-      recommendation: {
-        outfit,
-        source,
-        message: `Hey Abhay, for ${weatherData.weatherFeel || feel} ${weatherData.isDay ? 'day' : 'evening'} (~${weatherData.temperature}°C), try: ${outfit}`,
-        weatherSource: weatherData.source || 'online'
-      }
-    }
-
-    await setCache(cacheKey,responseData,1800)
-
-    res.status(200).json({
-      responseData,
-      note: 'This is the Phase 2 unified daily recommendation — real intelligence starts in Phase 2'
-    });
+  res.status(200).json({
+    responseData,
+    note: "AI-powered recommendation"
+  });
 })
 
 export const getShoppingSuggestions = asyncHandeler(async (req, res) => {

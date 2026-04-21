@@ -1,4 +1,4 @@
-import {getDailyRecommendations, getOutfitSuggestion, getShoppingSuggestions} from "../controllers/suggestion.controller.js"
+import {getDailyRecommendations, getOccasionSuggestion, getShoppingSuggestions} from "../controllers/suggestion.controller.js"
 import {getWardrobe} from "../controllers/wardrobe.controller.js"
 import {getProgress} from "../controllers/progress.controller.js"
 import scanWorker from "../workers/scanWorkerLite.js"
