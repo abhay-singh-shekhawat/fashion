@@ -11,7 +11,9 @@ You are a fashion stylist AI.
 User Profile:
 - Gender: ${profile.gender}
 - Skin tone: ${profile.skinTone}
-- Body type: ${profile.bodyType}
+- Height: ${profile.heightCm}
+- Weight: ${profile.weightKg} kg
+- Age: ${profile.age}
 
 Weather:
 - Temperature: ${weather.temperature}°C
