@@ -1,92 +1,141 @@
 import { getRecommendedColors } from './skinTonePalatte.js';
+import { fetchProducts } from '../configs/serp.js'; 
 
-export const generateShoppingSuggestions = (profile, wardrobeItems = []) => {
+// Build smarter search queries
+const buildSearchQuery = (suggestion, profile) => {
+  const gender = profile.gender || "men";
+  gender === `prefer_not_to_say` ? gender : gender = "";
+  const region = "India fashion";
+
+  return `${suggestion.item} for ${gender} ${region}`;
+};
+
+export const generateShoppingSuggestions = async (profile, wardrobeItems = []) => {
+
+  const {gender} = profile;
+  gender === `prefer_not_to_say` ? gender : gender = "";
+
+
+// If wardrobe is empty, suggest essentials
   if (wardrobeItems.length === 0) {
+    const baseSuggestions = [
+      "Add 2-3 tops (t-shirts, kurtis, shirts)",
+      "Add 2 bottoms (jeans, trousers, palazzo)",
+      "Add at least one outerwear for weather changes"
+    ];
+
+    const enriched = await Promise.all(
+      baseSuggestions.map(async (item) => {
+        const string = `${item} suitable for ${gender} in Indian fashion`;
+        const products = await fetchProducts(string);
+        return {
+          item,
+          reason: "Essential wardrobe starter",
+          products
+        };
+      })
+    );
+
     return {
-      message: "Your wardrobe is empty! Start by adding or scanning some items.",
-      suggestions: [
-        "Add 2-3 tops (t-shirts, kurtis, shirts)",
-        "Add 2 bottoms (jeans, trousers, palazzo)",
-        "Add at least one outerwear for weather changes"
-      ],
+      message: "Your wardrobe is empty! Start by adding some essentials.",
+      suggestions: enriched,
       priority: "high"
     };
   }
 
   const suggestions = [];
+
   const categories = wardrobeItems.reduce((acc, item) => {
     acc[item.category] = (acc[item.category] || 0) + 1;
     return acc;
   }, {});
 
-  const colors = [...new Set(wardrobeItems.map(i => i.color.toLowerCase()))];
+  const colors = [...new Set(
+    wardrobeItems.map(i => i.color?.toLowerCase?.() || "")
+  )];
 
-  // Basic balance check
   const topsCount = categories.top || 0;
   const bottomsCount = categories.bottom || 0;
   const outerCount = categories.outerwear || 0;
 
+
+  // CATEGORY BALANCE
   if (topsCount > bottomsCount + 2) {
     suggestions.push({
-      item: "More bottoms (jeans, chinos, palazzo or trousers)",
-      reason: "You have many tops but fewer bottoms to pair with them"
+      item: "Jeans, chinos, palazzo or trousers",
+      reason: "You have many tops but fewer bottoms"
     });
   }
 
   if (bottomsCount > topsCount + 1) {
     suggestions.push({
-      item: "More tops (shirts, kurtis, t-shirts)",
-      reason: "You have plenty of bottoms but need more variety in tops"
+      item: "Shirts, kurtis or t-shirts",
+      reason: "You need more tops for better combinations"
     });
   }
 
   if (outerCount === 0) {
     suggestions.push({
       item: "Light jacket, shawl or cardigan",
-      reason: "Useful for cooler evenings or AC rooms in Jaipur"
+      reason: "Useful for layering and weather changes"
     });
   }
 
-  // Color gap suggestion based on skin tone
+
+  // COLOR GAP (SKIN TONE)
   if (profile.skinTone !== 'unknown') {
     const palette = getRecommendedColors(profile.skinTone);
-    const missingColors = palette.best.filter(c => 
+
+    const missingColors = palette.best.filter(c =>
       !colors.some(existing => existing.includes(c.toLowerCase()))
     );
 
     if (missingColors.length > 0) {
       suggestions.push({
-        item: `${missingColors[0]} colored item (${missingColors.slice(1,3).join(' or ')})`,
-        reason: `Complements your ${profile.skinTone} skin tone better`
+        item: `${missingColors[0]} outfit or top`,
+        reason: `Enhances your ${profile.skinTone} skin tone`
       });
     }
   }
 
-  // Occasion coverage
-  if (!wardrobeItems.some(i => i.formality === 'smart_casual' || i.formality === 'business')) {
+  if (!wardrobeItems.some(i => 
+    i.formality === 'smart_casual' || i.formality === 'business'
+  )) {
     suggestions.push({
       item: "Smart casual shirt or kurti",
-      reason: "Good for office or interviews"
+      reason: "Perfect for office or semi-formal events"
     });
   }
 
   if (!wardrobeItems.some(i => i.formality === 'sporty')) {
     suggestions.push({
-      item: "Sporty/track pants or t-shirt",
-      reason: "For gym or casual active days"
+      item: "Track pants or sporty t-shirt",
+      reason: "Great for gym and active days"
     });
   }
 
+  const enrichedSuggestions = await Promise.all(
+    suggestions.slice(0, 3).map(async (suggestion) => {
+      const query = buildSearchQuery(suggestion, profile);
+      const products = await fetchProducts(query);
+
+      return {
+        ...suggestion,
+        products
+      };
+    })
+  );
+
   return {
-    message: suggestions.length > 0 
-      ? "Here’s what would improve your wardrobe the most:" 
+    message: enrichedSuggestions.length > 0
+      ? "Here’s what would improve your wardrobe the most:"
       : "Your wardrobe looks well-balanced! Great job.",
-    suggestions: suggestions.slice(0, 3), // max 3
+    suggestions: enrichedSuggestions,
     wardrobeBalance: {
       tops: topsCount,
       bottoms: bottomsCount,
       outerwear: outerCount
     },
-    priority: suggestions.length > 2 ? "high" : "medium"
+    priority: enrichedSuggestions.length > 2 ? "high" : "medium"
   };
 };

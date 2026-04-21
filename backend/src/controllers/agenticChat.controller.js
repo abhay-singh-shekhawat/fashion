@@ -49,7 +49,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
     // Add current message to history
     history.push({ role: "user", content: message });
 
-    const result = await chat.sendMessage(message);
+    let result = await chat.sendMessage(message);
 
     let finalReply = "";
     
@@ -59,18 +59,19 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       const functionCall = parts.find(f => f.functionCall)?.functionCall
 
       if (!functionCall) {
-        finalReply = response.response.text();
+        finalReply = result.response.text();
         break;
       }
 
       const { name, args } = functionCall;
 
+      let toolResult;
       if(args.imageUrl){
-        const toolResult = toolExecutors[name]({ userId, imageUrl })
+        toolResult = await toolExecutors[name]({ userId, imageUrl })
       } else{
-        const toolResult = toolExecutors[name]({ userId, args })
+        toolResult = await toolExecutors[name]({ userId, ...args })
       }
-      response = await chat.sendMessage([
+      result = await chat.sendMessage([
         {
           functionResponse: {
             name,
@@ -80,11 +81,21 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       ]);
     }
 
-      history.push({ role: "assistant", content: finalReply });
+    // Parse finalReply as JSON
+    let parsedReply;
+    try {
+      parsedReply = JSON.parse(finalReply);
+    } catch (parseError) {
+      // If not JSON, wrap it as object
+      parsedReply = { message: finalReply.trim() };
+    }
+
+    history.push({ role: "assistant", content: finalReply });
 
     res.status(200).json({
       userId,
-      reply: finalReply.trim(),
+      reply: parsedReply,
+      success: true
     });
 
 })

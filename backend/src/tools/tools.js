@@ -4,6 +4,7 @@ import {getProgress} from "../controllers/progress.controller.js"
 import scanWorker from "../workers/scanWorkerLite.js"
 import cloudinary from "../configs/cloudinary.js"
 import { scanQueuelite } from "../configs/queue.js"
+import {fetchProducts} from "../configs/serp.js"
 
 export const tools = {
   get_daily_recommendation: {
@@ -60,9 +61,10 @@ export const tools = {
     parameters: {
       type: "object",
       properties: {
-        userId: { type: "string", description: "User ID" }
+        userId: { type: "string", description: "User ID" },
+        query: { type: "string", description: "Search query for shopping suggestions" }
       },
-      required: ["userId"]
+      required: ["userId","query"]
     }
   },
 
@@ -177,7 +179,7 @@ export const toolExecutors = {
       const res = { json: (data) => data ,
           status: (code) => ({ json: (data) => data })
         };
-      const result = await getShoppingSuggestions(req,res)
+      const result = await fetchProducts(args.args?.query)
       return result
     } catch (error) {
       console.log(error,"error in shopping suggestion tool")

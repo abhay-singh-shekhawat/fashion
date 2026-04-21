@@ -1,4 +1,4 @@
-import { getRecommendedColors } from "./skinTonePalettes.js";
+import { getRecommendedColors } from "./skinTonePalatte.js";
 
 const WEIGHTS = {
   color: 30,

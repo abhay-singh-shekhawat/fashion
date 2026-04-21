@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+  apiKey: process.env.GROK_API_KEY
 });
 
 export const getRecommendedColors = async (skinTone) => {
