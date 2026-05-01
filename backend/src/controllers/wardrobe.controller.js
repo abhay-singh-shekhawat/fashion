@@ -8,6 +8,7 @@ import { getRecommendedColors } from "../utils/skinTonePalatte.js"
 import { calculateOutfitScore, estimateWeatherSuitability, estimateSkinToneFit } from '../utils/outfitScorer.js';
 import { awardPoints } from "./progress.controller.js"
 import OpenAI from "openai";
+import { setCache , getCache , generateCacheKey } from "../utils/cache.js"
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -124,17 +125,27 @@ export const addClothingItem = asyncHandeler(async(req,res,next)=>{
 export const getWardrobe = asyncHandeler(async(req,res,next)=>{
     const userId = req.user.id;
 
+    const cacheKey = generateCacheKey("wardrobe", userId);
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     if (!userId) {
-      throw new api_error(400,"userId required (query param)")
+      throw new api_error(400,"userId required")
     }
 
     const items = await ClothingItem.find({ userId }).sort({ createdAt: -1 });
+
+    await setCache(cacheKey, items, 300);
 
     res.status(200).json({ items });
 })
 
 export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
   const userId = req.user.id;
+
+  const cacheKey = generateCacheKey("wardrobe-suggestions", userId);
+  const cached = await getCache(cacheKey);
+  if (cached) return res.status(200).json(cached);
 
   const profile = await BodyProfile.findOne({ userId });
   const items = await ClothingItem.find({ userId });
@@ -187,20 +198,31 @@ export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
     });
   }
 
-  await awardPoints(userId, 5, 'wardrobe_suggestion');
-
-  res.status(200).json({
+  const responseData = {
     userId,
     fullOutfit,
     wardrobeCount: items.length,
     temperature: temp,
     suggestion,
     profileSkinTone: profile.skinTone
+  }
+
+  await setCache(cacheKey, responseData, 300);
+
+  await awardPoints(userId, 5, 'wardrobe_suggestion');
+
+  res.status(200).json({
+    ...responseData
   });
 })
 
 export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
   const userId = req.user.id;
+
+  const cacheKey = generateCacheKey("W-occasion-suggestions", userId);
+  const cached = await getCache(cacheKey);
+  if (cached) return res.status(200).json(cached);
+
   const { occasion } = req.body;
 
   if (!occasionToFormalities[occasion]) {
@@ -255,9 +277,7 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
       ? 25
       : 15;
 
-  await awardPoints(userId, 5, 'occasion_suggestion');
-
-  res.status(200).json({
+  const responseData = {
     occasion,
     suggestion: `${top.name} (${top.color}, ${top.formality}) + ${bottom.name} (${bottom.color}, ${bottom.formality})`,
     fullOutfit,
@@ -266,5 +286,13 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
       : 'Acceptable but not ideal',
     weatherNote: `~${temp}°C – ${feel}`,
     aiReason: ai.reason
+  };
+
+  await setCache(cacheKey, responseData, 300);
+
+  await awardPoints(userId, 5, 'occasion_suggestion');
+
+  res.status(200).json({
+    ...responseData,
   });
 })
