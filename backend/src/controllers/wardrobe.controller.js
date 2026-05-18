@@ -3,9 +3,6 @@ import ClothingItem from "../models/clothingItem.model.js"
 import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
-import {getColorCompatibility} from "../utils/colorHarmony.js"
-import { getRecommendedColors } from "../utils/skinTonePalatte.js"
-import { calculateOutfitScore, estimateWeatherSuitability, estimateSkinToneFit } from '../utils/outfitScorer.js';
 import { awardPoints } from "./progress.controller.js"
 import OpenAI from "openai";
 import { setCache , getCache , generateCacheKey } from "../utils/cache.js"

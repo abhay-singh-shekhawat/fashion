@@ -3,7 +3,6 @@ import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import ClothingItem from "../models/clothingItem.model.js"
-import { getRecommendedColors } from "../utils/skinTonePalatte.js"
 import { awardPoints } from "./progress.controller.js"
 import { getOfflineOutfitSuggestion } from "../utils/offlineSuggestion.js"
 import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';

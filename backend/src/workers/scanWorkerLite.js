@@ -7,7 +7,7 @@ import {GoogleGenerativeAI} from "@google/generative-ai"
 
 const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-const scanWorker = new Worker(`process-scan`,async(job)=>{
+const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
     const { userId, imageUrl, publicId, imageHash } = job.data;
     try {
         // Image-level deduplication

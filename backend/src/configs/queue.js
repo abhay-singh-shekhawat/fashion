@@ -7,6 +7,6 @@ const connection = {
 }
 
 export const scanQueue = new Queue(`outfit-scan`,connection)
-export const scanQueuelite = new Queue(`outfit-scan`,connection)
+export const scanQueuelite = new Queue(`outfit-scan-lite`,connection)
 
 export default {scanQueue}
