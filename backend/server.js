@@ -70,3 +70,6 @@ app.use("/api/v1/wardrobe",wardrobeRouter)
 
 import agenticChat from "./src/routes/chatAgent.routes.js"
 app.use("/api/v1/agent",agenticChat)
+
+import progressRouter from "./src/routes/progress.routes.js"
+app.use("/api/v1/progress",progressRouter)
