@@ -5,6 +5,12 @@ import { awardPoints } from "./progress.controller.js"
 import cloudinary from "../configs/cloudinary.js"
 import crypto from "crypto"
 import { scanQueue } from "../configs/queue.js"
+import {
+  emitScanStart,
+  emitScanProgress,
+  emitScanComplete,
+  emitScanError,
+} from "../services/socketService.js"
 
 const detectOutfit = async(imagePath)=>{
     // Possible fake types
@@ -35,43 +41,76 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
         throw new api_error(400,"No image uploaded")
     }
 
-    const publicId = `scan_${userId}_${Date.now()}`
-    const uploadResult = await cloudinary.uploader.upload(
-      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
-      {
-        folder: 'fashion/scan',
-        public_id: publicId,
-        overwrite: false,
-      }
-    );
+    try {
+        // Emit scan start
+        await emitScanStart(userId, {
+            fileName: req.file.originalname,
+            fileSize: req.file.size
+        });
 
-    const imageHash = crypto
-        .createHash('sha256')
-        .update(req.file.buffer)
-        .digest('hex');
+        const publicId = `scan_${userId}_${Date.now()}`
+        const uploadResult = await cloudinary.uploader.upload(
+          `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+          {
+            folder: 'fashion/scan',
+            public_id: publicId,
+            overwrite: false,
+          }
+        );
 
-    await scanQueue.add(`process-scan`,{
-        userId,
-        imageUrl: uploadResult.secure_url,
-        publicId: uploadResult.public_id,
-        imageHash: imageHash,
-        originalFileName: req.file.originalname
-    },{
-        attempts: 3,
-        backoff: {type: `exponential` , delay: 5000},
-        removeOnComplete: true,
-        removeOnFail: false
-    })
+        // Emit progress
+        await emitScanProgress(userId, {
+            status: "uploaded",
+            message: "Image uploaded to cloud storage",
+            progress: 30
+        });
 
-    // Award points for scan uploading
-    await awardPoints(userId, 8, 'scan_uploaded');
+        const imageHash = crypto
+            .createHash('sha256')
+            .update(req.file.buffer)
+            .digest('hex');
 
-    res.status(200).json({
-        success: true,
-        message: "Scan job queued successfully. Processing in background...",
-        jobId: publicId,
-        uploadedImageUrl: uploadResult.secure_url,
-        publicId: uploadResult.public_id,
-        note: "You will be notified when processing is complete. Real YOLOv8 coming soon."
-    });
+        await scanQueue.add(`process-scan`,{
+            userId,
+            imageUrl: uploadResult.secure_url,
+            publicId: uploadResult.public_id,
+            imageHash: imageHash,
+            originalFileName: req.file.originalname
+        },{
+            attempts: 3,
+            backoff: {type: `exponential` , delay: 5000},
+            removeOnComplete: true,
+            removeOnFail: false
+        })
+
+        // Emit progress
+        await emitScanProgress(userId, {
+            status: "queued",
+            message: "Processing job queued, starting analysis...",
+            progress: 50
+        });
+
+        // Award points for scan uploading
+        await awardPoints(userId, 8, 'scan_uploaded');
+
+        // Emit completion
+        await emitScanComplete(userId, {
+            jobId: publicId,
+            uploadedImageUrl: uploadResult.secure_url,
+            message: "Scan job queued successfully. Processing in background..."
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Scan job queued successfully. Processing in background...",
+            jobId: publicId,
+            uploadedImageUrl: uploadResult.secure_url,
+            publicId: uploadResult.public_id,
+            note: "You will be notified when processing is complete. Real YOLOv8 coming soon."
+        });
+    } catch(error) {
+        console.error("[Scanner] Error:", error.message);
+        await emitScanError(userId, error.message);
+        throw error;
+    }
 })

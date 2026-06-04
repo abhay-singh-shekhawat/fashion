@@ -13,6 +13,15 @@ import {
   estimateSkinToneFit
 } from "../utils/outfitScorer.js";
 import crypto from "crypto";
+import {
+  emitRatingStart,
+  emitRatingComplete,
+  emitRatingError,
+  emitScanProgress,
+  emitWeatherFetched,
+  emitTipsGenerated,
+  emitOutfitScore,
+} from "../services/socketService.js";
 
 // Helper to wait for scan job completion
 const waitForScanJob = async (jobId, timeout = 60000) => {
@@ -48,186 +57,259 @@ const waitForScanJob = async (jobId, timeout = 60000) => {
  */
 export const rateOutfitController = asyncHandler(async (req, res) => {
   const { imageUrl, occasion = "casual", detailedFeedback = false } = req.body;
-  const userId = req.user._id;
+  const userId = req.user._id.toString();
 
   if (!imageUrl) {
     throw new api_error(400, "imageUrl is required");
   }
 
-  // Get user
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new api_error(404, "User not found");
-  }
-
-  // Hash image for duplicate detection
-  const imageBuffer = await fetch(imageUrl).then(r => r.arrayBuffer());
-  const imageHash = crypto
-    .createHash("sha256")
-    .update(Buffer.from(imageBuffer))
-    .digest("hex");
-
-  const publicId = `${userId}-${Date.now()}`;
-
-  // ========== SCAN IMAGE ==========
-  let scanResult;
   try {
-    const job = await scanQueuelite.add("scan", {
-      userId,
-      imageUrl,
-      publicId,
-      imageHash
+    // Emit rating start
+    await emitRatingStart(userId);
+
+    // Get user
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new api_error(404, "User not found");
+    }
+
+    // Hash image for duplicate detection
+    const imageBuffer = await fetch(imageUrl).then(r => r.arrayBuffer());
+    const imageHash = crypto
+      .createHash("sha256")
+      .update(Buffer.from(imageBuffer))
+      .digest("hex");
+
+    const publicId = `${userId}-${Date.now()}`;
+
+    // ========== SCAN IMAGE ==========
+    let scanResult;
+    try {
+      const job = await scanQueuelite.add("scan", {
+        userId,
+        imageUrl,
+        publicId,
+        imageHash
+      });
+
+      console.log(`[Outfit Rating] Scan job queued: ${job.id}`);
+      
+      // Emit progress
+      await emitScanProgress(userId, {
+        status: "processing",
+        message: "Analyzing clothing items...",
+        progress: 25
+      });
+
+      scanResult = await waitForScanJob(job.id);
+
+      if (!scanResult?.items || scanResult.items.length === 0) {
+        await emitRatingError(userId, "No clothing items detected in image");
+        throw new api_error(400, "No clothing items detected in image");
+      }
+
+      // Emit scan progress update
+      await emitScanProgress(userId, {
+        status: "complete",
+        message: "Items detected successfully",
+        progress: 50,
+        itemsCount: scanResult.items.length
+      });
+
+    } catch (scanError) {
+      console.error("[Outfit Rating] Scan failed:", scanError.message);
+      await emitRatingError(userId, `Scan failed: ${scanError.message}`);
+      throw new api_error(400, `Scan failed: ${scanError.message}`);
+    }
+
+    // ========== GET WEATHER ==========
+    let weatherData;
+    try {
+      // Emit progress
+      await emitScanProgress(userId, {
+        status: "fetching_weather",
+        message: "Checking local weather...",
+        progress: 60
+      });
+
+      weatherData = await getWeather();
+
+      // Emit weather fetched
+      await emitWeatherFetched(userId, {
+        temperature: weatherData.temperature,
+        condition: weatherData.condition,
+        isDay: weatherData.isDay
+      });
+
+    } catch (weatherError) {
+      console.warn("[Outfit Rating] Weather fetch failed");
+      weatherData = {
+        temperature: 25,
+        condition: "clear",
+        isDay: true
+      };
+    }
+
+    // ========== ESTIMATE COMPONENT SCORES ==========
+    let weatherScore = 0;
+    let skinToneScore = 0;
+
+    try {
+      const categories = scanResult.items
+        .map(item => item.type?.toLowerCase())
+        .filter(Boolean);
+
+      const tempCategory = 
+        weatherData.temperature > 28 ? "hot" :
+        weatherData.temperature < 15 ? "cold" :
+        "mild";
+
+      weatherScore = estimateWeatherSuitability(tempCategory, categories);
+
+      // Get user's body profile for skin tone
+      const bodyProfile = await BodyProfile.findOne({ user: userId });
+      if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
+        const colors = scanResult.items.map(item => item.color);
+        skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
+      }
+    } catch (scoreError) {
+      console.warn("[Outfit Rating] Score estimation failed:", scoreError.message);
+    }
+
+    // ========== CALCULATE OUTFIT SCORE ==========
+    let outfitScore;
+    try {
+      const colorHarmonyEstimate = Math.min(
+        100,
+        50 + (scanResult.items.length * 15)
+      );
+
+      const formalityMap = {
+        casual: 12,
+        smart_casual: 18,
+        formal: 22,
+        party: 20,
+        traditional: 18
+      };
+      const formalityMatch = formalityMap[scanResult.items[0]?.formalityLevel] || 15;
+
+      outfitScore = calculateOutfitScore({
+        colorHarmonyScore: colorHarmonyEstimate,
+        skinToneFit: skinToneScore,
+        weatherSuitability: weatherScore,
+        formalityMatch,
+        isScanned: true,
+        scanConfidence: 0.85
+      });
+
+      // Emit outfit score
+      await emitOutfitScore(userId, {
+        overall: outfitScore.score,
+        weather: weatherScore,
+        skinTone: skinToneScore
+      });
+
+    } catch (calcError) {
+      console.error("[Outfit Rating] Score calculation failed:", calcError.message);
+      throw new api_error(500, "Failed to calculate outfit score");
+    }
+
+    // ========== GET IMPROVEMENT TIPS ==========
+    let improvementTips = null;
+    try {
+      // Emit progress
+      await emitScanProgress(userId, {
+        status: "generating_tips",
+        message: "Creating personalized suggestions...",
+        progress: 75
+      });
+
+      const bodyProfile = await BodyProfile.findOne({ user: userId });
+      const tipsResponse = detailedFeedback
+        ? await generateOutfitTips({
+            outfitScore,
+            detectedItems: scanResult.items,
+            weather: weatherData,
+            userProfile: bodyProfile || {},
+            occasion
+          })
+        : await generateQuickOutfitTips({
+            outfitScore,
+            detectedItems: scanResult.items,
+            weather: weatherData,
+            userProfile: bodyProfile || {},
+            occasion
+          });
+
+      improvementTips = {
+        tips: tipsResponse.tips,
+        mode: detailedFeedback ? "detailed" : "quick",
+        model: tipsResponse.model
+      };
+
+      // Emit tips generated
+      await emitTipsGenerated(userId, {
+        tipsCount: improvementTips.tips.length,
+        tips: improvementTips.tips
+      });
+
+    } catch (tipsError) {
+      console.warn("[Outfit Rating] Tips generation failed:", tipsError.message);
+      // Tips are optional - don't fail the whole request
+    }
+
+    // ========== AWARD POINTS ==========
+    try {
+      const pointsAwarded = outfitScore.score > 70 ? 10 : 5;
+      await awardPoints(userId, pointsAwarded, "outfit_scan");
+    } catch (pointsError) {
+      console.warn("[Outfit Rating] Points award failed:", pointsError.message);
+    }
+
+    // ========== BUILD RESPONSE ==========
+    const response = {
+      score: outfitScore.score,
+      message: outfitScore.message,
+      breakdown: outfitScore.breakdown,
+      scannedOutfit: {
+        items: scanResult.items,
+        itemCount: scanResult.items.length,
+        colors: scanResult.items.map(i => i.color),
+        formalityLevel: scanResult.items[0]?.formalityLevel,
+        overallStyle: scanResult.items[0]?.overallStyle
+      },
+      weather: {
+        temperature: weatherData.temperature,
+        condition: weatherData.weatherCode,
+        isDay: weatherData.isDay
+      },
+      improvementTips: improvementTips || null,
+      metadata: {
+        userId,
+        scanConfidence: 0.85,
+        scannedAt: new Date().toISOString(),
+        imageHash: imageHash.substring(0, 8)
+      }
+    };
+
+    console.log(`[Outfit Rating] Complete - Score: ${outfitScore.score}`);
+
+    // Emit rating complete
+    await emitRatingComplete(userId, {
+      success: true,
+      message: "Outfit rating complete",
+      rating: response
     });
 
-    console.log(`[Outfit Rating] Scan job queued: ${job.id}`);
-    scanResult = await waitForScanJob(job.id);
-
-    if (!scanResult?.items || scanResult.items.length === 0) {
-      throw new api_error(400, "No clothing items detected in image");
-    }
-  } catch (scanError) {
-    console.error("[Outfit Rating] Scan failed:", scanError.message);
-    throw new api_error(400, `Scan failed: ${scanError.message}`);
-  }
-
-  // ========== GET WEATHER ==========
-  let weatherData;
-  try {
-    weatherData = await getWeather();
-  } catch (weatherError) {
-    console.warn("[Outfit Rating] Weather fetch failed");
-    weatherData = {
-      temperature: 25,
-      condition: "clear",
-      isDay: true
-    };
-  }
-
-  // ========== ESTIMATE COMPONENT SCORES ==========
-  let weatherScore = 0;
-  let skinToneScore = 0;
-
-  try {
-    const categories = scanResult.items
-      .map(item => item.type?.toLowerCase())
-      .filter(Boolean);
-
-    const tempCategory = 
-      weatherData.temperature > 28 ? "hot" :
-      weatherData.temperature < 15 ? "cold" :
-      "mild";
-
-    weatherScore = estimateWeatherSuitability(tempCategory, categories);
-
-    // Get user's body profile for skin tone
-    const bodyProfile = await BodyProfile.findOne({ user: userId });
-    if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
-      const colors = scanResult.items.map(item => item.color);
-      skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
-    }
-  } catch (scoreError) {
-    console.warn("[Outfit Rating] Score estimation failed:", scoreError.message);
-  }
-
-  // ========== CALCULATE OUTFIT SCORE ==========
-  let outfitScore;
-  try {
-    const colorHarmonyEstimate = Math.min(
-      100,
-      50 + (scanResult.items.length * 15)
-    );
-
-    const formalityMap = {
-      casual: 12,
-      smart_casual: 18,
-      formal: 22,
-      party: 20,
-      traditional: 18
-    };
-    const formalityMatch = formalityMap[scanResult.items[0]?.formalityLevel] || 15;
-
-    outfitScore = calculateOutfitScore({
-      colorHarmonyScore: colorHarmonyEstimate,
-      skinToneFit: skinToneScore,
-      weatherSuitability: weatherScore,
-      formalityMatch,
-      isScanned: true,
-      scanConfidence: 0.85
+    return res.status(200).json({
+      success: true,
+      data: response
     });
-  } catch (calcError) {
-    console.error("[Outfit Rating] Score calculation failed:", calcError.message);
-    throw new api_error(500, "Failed to calculate outfit score");
+  } catch (error) {
+    console.error("[Outfit Rating] Error:", error.message);
+    await emitRatingError(userId, error.message);
+    throw error;
   }
-
-  // ========== GET IMPROVEMENT TIPS ==========
-  let improvementTips = null;
-  try {
-    const bodyProfile = await BodyProfile.findOne({ user: userId });
-    const tipsResponse = detailedFeedback
-      ? await generateOutfitTips({
-          outfitScore,
-          detectedItems: scanResult.items,
-          weather: weatherData,
-          userProfile: bodyProfile || {},
-          occasion
-        })
-      : await generateQuickOutfitTips({
-          outfitScore,
-          detectedItems: scanResult.items,
-          weather: weatherData,
-          userProfile: bodyProfile || {},
-          occasion
-        });
-
-    improvementTips = {
-      tips: tipsResponse.tips,
-      mode: detailedFeedback ? "detailed" : "quick",
-      model: tipsResponse.model
-    };
-  } catch (tipsError) {
-    console.warn("[Outfit Rating] Tips generation failed:", tipsError.message);
-    // Tips are optional - don't fail the whole request
-  }
-
-  // ========== AWARD POINTS ==========
-  try {
-    const pointsAwarded = outfitScore.score > 70 ? 10 : 5;
-    await awardPoints(userId, pointsAwarded, "outfit_scan");
-  } catch (pointsError) {
-    console.warn("[Outfit Rating] Points award failed:", pointsError.message);
-  }
-
-  // ========== BUILD RESPONSE ==========
-  const response = {
-    score: outfitScore.score,
-    message: outfitScore.message,
-    breakdown: outfitScore.breakdown,
-    scannedOutfit: {
-      items: scanResult.items,
-      itemCount: scanResult.items.length,
-      colors: scanResult.items.map(i => i.color),
-      formalityLevel: scanResult.items[0]?.formalityLevel,
-      overallStyle: scanResult.items[0]?.overallStyle
-    },
-    weather: {
-      temperature: weatherData.temperature,
-      condition: weatherData.weatherCode,
-      isDay: weatherData.isDay
-    },
-    improvementTips: improvementTips || null,
-    metadata: {
-      userId,
-      scanConfidence: 0.85,
-      scannedAt: new Date().toISOString(),
-      imageHash: imageHash.substring(0, 8)
-    }
-  };
-
-  console.log(`[Outfit Rating] Complete - Score: ${outfitScore.score}`);
-  return res.status(200).json({
-    success: true,
-    data: response
-  });
 });
 
 /**

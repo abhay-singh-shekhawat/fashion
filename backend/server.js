@@ -3,13 +3,20 @@ dotenv.config()
 
 import express from "express"
 import cors from "cors"
+import http from "http"
 import  connectDB  from "./src/configs/db.js"
 import errorHandler from "./src/middlewares/errorHandler.js"
+import initializeSocket from "./src/configs/socket.js"
 import rateLimit from "express-rate-limit"
 import os from "os"
 
 const app = express()
+const httpServer = http.createServer(app)
 const PORT = process.env.PORT || 5000
+
+// Initialize Socket.IO
+const { io, isUserOnline, emitToUser } = initializeSocket(httpServer)
+global.io = io
 
 // Middleware
 app.use(cors())
@@ -35,8 +42,9 @@ import('./src/workers/scanWorker.js').catch(err => {
 
 connectDB().then(() => {
     console.log("Connected to MongoDB")
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`)
+        console.log(`Socket.IO initialized on ws://localhost:${PORT}`)
     })
 }).catch((err) => {
     console.error(`error in db connection ${err.message}`)

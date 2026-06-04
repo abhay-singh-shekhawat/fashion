@@ -2,6 +2,13 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { tools, toolExecutors } from "../tools/tools.js";
 import asyncHandeler from "../utils/asyncHandler.js";
 import { api_error } from "../utils/errorHandler.js";
+import {
+  emitChatStart,
+  emitChatResponseChunk,
+  emitChatResponseComplete,
+  emitChatError,
+  emitChatTyping,
+} from "../services/socketService.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -36,66 +43,95 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       throw new api_error(400,"userId and message are required")
     }
 
-    if (!conversationHistory.has(userId)) {
-      conversationHistory.set(userId, []);
-    }
-    const history = conversationHistory.get(userId);
-
-    const chat = model.startChat({
-      history: history.slice(-10), // keep last 10 messages for context
-      generationConfig: { temperature: 0.75 }
-    });
-
-    // Add current message to history
-    history.push({ role: "user", content: message });
-
-    let result = await chat.sendMessage(message);
-
-    let finalReply = "";
-    
-    while(true){
-      const parts = result.response.candidates[0].content.parts;
-
-      const functionCall = parts.find(f => f.functionCall)?.functionCall
-
-      if (!functionCall) {
-        finalReply = result.response.text();
-        break;
-      }
-
-      const { name, args } = functionCall;
-
-      let toolResult;
-      if(args.imageUrl){
-        toolResult = await toolExecutors[name]({ userId, imageUrl })
-      } else{
-        toolResult = await toolExecutors[name]({ userId, ...args })
-      }
-      result = await chat.sendMessage([
-        {
-          functionResponse: {
-            name,
-            response: toolResult
-          }
-        }
-      ]);
-    }
-
-    // Parse finalReply as JSON
-    let parsedReply;
     try {
-      parsedReply = JSON.parse(finalReply);
-    } catch (parseError) {
-      // If not JSON, wrap it as object
-      parsedReply = { message: finalReply.trim() };
+      // Emit chat start
+      await emitChatStart(userId, message);
+      await emitChatTyping(userId, true);
+
+      if (!conversationHistory.has(userId)) {
+        conversationHistory.set(userId, []);
+      }
+      const history = conversationHistory.get(userId);
+
+      const chat = model.startChat({
+        history: history.slice(-10), // keep last 10 messages for context
+        generationConfig: { temperature: 0.75 }
+      });
+
+      // Add current message to history
+      history.push({ role: "user", content: message });
+
+      const startTime = Date.now();
+      let result = await chat.sendMessage(message);
+
+      let finalReply = "";
+      let chunkIndex = 0;
+      
+      while(true){
+        const parts = result.response.candidates[0].content.parts;
+
+        const functionCall = parts.find(f => f.functionCall)?.functionCall
+
+        if (!functionCall) {
+          finalReply = result.response.text();
+          
+          // Emit response chunks
+          const words = finalReply.split(' ');
+          for (const word of words) {
+            await emitChatResponseChunk(userId, word + ' ', chunkIndex);
+            chunkIndex++;
+            // Simulate streaming delay
+            await new Promise(resolve => setTimeout(resolve, 30));
+          }
+          
+          break;
+        }
+
+        const { name, args } = functionCall;
+
+        let toolResult;
+        if(args.imageUrl){
+          toolResult = await toolExecutors[name]({ userId, imageUrl })
+        } else{
+          toolResult = await toolExecutors[name]({ userId, ...args })
+        }
+        result = await chat.sendMessage([
+          {
+            functionResponse: {
+              name,
+              response: toolResult
+            }
+          }
+        ]);
+      }
+
+      // Parse finalReply as JSON
+      let parsedReply;
+      try {
+        parsedReply = JSON.parse(finalReply);
+      } catch (parseError) {
+        // If not JSON, wrap it as object
+        parsedReply = { message: finalReply.trim() };
+      }
+
+      history.push({ role: "assistant", content: finalReply });
+
+      // Emit typing stop and completion
+      await emitChatTyping(userId, false);
+      await emitChatResponseComplete(userId, finalReply, {
+        model: "gemini-3.1-flash-lite",
+        duration: Date.now() - startTime
+      });
+
+      res.status(200).json({
+        userId,
+        reply: parsedReply,
+        success: true
+      });
+    } catch (error) {
+      console.error("[Chat] Error:", error.message);
+      await emitChatError(userId, error.message);
+      throw error;
     }
-
-    history.push({ role: "assistant", content: finalReply });
-
-    res.status(200).json({
-      userId,
-      reply: parsedReply,
-      success: true
-    });
 
 })
