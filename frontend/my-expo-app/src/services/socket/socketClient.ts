@@ -1,27 +1,30 @@
-import { io, Socket } from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import { asyncStorageService } from '../storage/asyncStorage';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL =
+  process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:5000';
 
-let socket: Socket | null = null;
+class SocketService {
+  private socket: Socket | null = null;
+  private isConnecting = false;
 
-export const socketService = {
-  async connect(): Promise<Socket | null> {
+  async connect(): Promise<void> {
+    if (this.socket?.connected) {
+      return;
+    }
+
+    if (this.isConnecting) {
+      return;
+    }
+
+    this.isConnecting = true;
+
     try {
-      if (socket?.connected) {
-        return socket;
-      }
-
       const token = await asyncStorageService.getToken();
 
-      if (!token) {
-        console.warn('No token available for socket connection');
-        return null;
-      }
-
-      socket = io(SOCKET_URL, {
+      this.socket = io(SOCKET_URL, {
         auth: {
-          token,
+          token: token,
         },
         reconnection: true,
         reconnectionDelay: 1000,
@@ -30,59 +33,67 @@ export const socketService = {
         transports: ['websocket', 'polling'],
       });
 
-      socket.on('connect', () => {
-        console.log('Socket connected:', socket?.id);
+      this.socket.on('connect', () => {
+        console.log('Socket connected:', this.socket?.id);
+        // Emit authentication
+        this.socket?.emit('auth:authenticate', { token });
       });
 
-      socket.on('disconnect', () => {
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+      });
+
+      this.socket.on('disconnect', () => {
         console.log('Socket disconnected');
       });
 
-      socket.on('error', (error) => {
-        console.error('Socket error:', error);
+      this.socket.on('auth:success', (data) => {
+        console.log('Socket authenticated:', data);
       });
 
-      return socket;
+      this.socket.on('auth:error', (error) => {
+        console.error('Socket auth error:', error);
+        this.disconnect();
+      });
     } catch (error) {
-      console.error('Socket connection error:', error);
-      return null;
+      console.error('Error connecting to socket:', error);
+    } finally {
+      this.isConnecting = false;
     }
-  },
+  }
 
   getSocket(): Socket | null {
-    return socket;
-  },
+    return this.socket;
+  }
 
   disconnect(): void {
-    if (socket) {
-      socket.disconnect();
-      socket = null;
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
     }
-  },
+  }
 
   on(event: string, callback: (...args: any[]) => void): void {
-    if (socket) {
-      socket.on(event, callback);
+    if (this.socket) {
+      this.socket.on(event, callback);
     }
-  },
+  }
 
   off(event: string, callback?: (...args: any[]) => void): void {
-    if (socket) {
-      if (callback) {
-        socket.off(event, callback);
-      } else {
-        socket.off(event);
-      }
+    if (this.socket) {
+      this.socket.off(event, callback);
     }
-  },
+  }
 
   emit(event: string, data?: any): void {
-    if (socket) {
-      socket.emit(event, data);
+    if (this.socket) {
+      this.socket.emit(event, data);
     }
-  },
+  }
 
   isConnected(): boolean {
-    return socket?.connected || false;
-  },
-};
+    return this.socket?.connected ?? false;
+  }
+}
+
+export const socketService = new SocketService();

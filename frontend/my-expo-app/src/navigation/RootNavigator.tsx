@@ -7,14 +7,13 @@ import { RootState, AppDispatch } from '../store/store';
 import { verifyToken } from '../store/slices/authSlice';
 import { fetchProfile } from '../store/slices/userSlice';
 import { asyncStorageService } from '../services/storage/asyncStorage';
+import { socketService } from '../services/socket/socketClient';
 
-// Screens (named exports)
-import { LoginScreen } from '../screens/auth/LoginScreen';
-import { RegisterScreen } from '../screens/auth/RegisterScreen';
-import { SplashScreen } from '../screens/auth/SplashScreen';
-import { ProfileSetupScreen } from '../screens/main/ProfileSetupScreen';
-import { HomeScreen } from '../screens/main/HomeScreen';
-import { SettingsScreen } from '../screens/main/SettingsScreen';
+// Screens
+import LoginScreen from '../screens/auth/LoginScreen';
+import RegisterScreen from '../screens/auth/RegisterScreen';
+import {SplashScreen} from '../screens/auth/SplashScreen';
+import ProfileScreen from '../screens/main/ProfileScreen';
 import ErrorBoundary from '../components/common/ErrorBoundary';
 
 // Navigation
@@ -27,7 +26,9 @@ export const RootNavigator: React.FC = () => {
   const { isAuthenticated, accessToken, user } = useSelector(
     (state: RootState) => state.auth
   );
-  const { hasCompletedProfile } = useSelector((state: RootState) => state.user);
+  const { hasCompletedProfile } = useSelector(
+    (state: RootState) => state.user
+  );
 
   const [isBootstrapping, setIsBootstrapping] = useState(true);
 
@@ -41,6 +42,9 @@ export const RootNavigator: React.FC = () => {
           console.log('Found saved token, verifying...');
           // Verify token is still valid
           await dispatch(verifyToken(savedToken)).unwrap();
+
+          // Connect socket
+          await socketService.connect();
 
           // Fetch user profile
           try {
@@ -60,6 +64,17 @@ export const RootNavigator: React.FC = () => {
     bootstrap();
   }, [dispatch]);
 
+  useEffect(() => {
+    // Connect socket when authenticated
+    if (isAuthenticated) {
+      socketService.connect().catch((err) => {
+        console.error('Socket connection error:', err);
+      });
+    } else {
+      socketService.disconnect();
+    }
+  }, [isAuthenticated]);
+
   if (isBootstrapping) {
     return (
       <View className="flex-1 justify-center items-center bg-white">
@@ -71,7 +86,12 @@ export const RootNavigator: React.FC = () => {
   return (
     <ErrorBoundary>
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            cardStyle: { backgroundColor: 'white' },
+          }}
+        >
           {!isAuthenticated ? (
             // Auth Stack
             <Stack.Group>
@@ -80,15 +100,22 @@ export const RootNavigator: React.FC = () => {
             </Stack.Group>
           ) : !hasCompletedProfile ? (
             // Profile Setup
-            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+            <Stack.Screen
+              name="ProfileSetup"
+              component={ProfileScreen}
+              options={{
+                animationEnabled: false,
+              }}
+            />
           ) : (
             // Main App Stack
             <Stack.Group>
-              <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
               <Stack.Screen
-                name="Home"
-                component={HomeScreen}
-                options={{ headerShown: false }}
+                name="MainTabs"
+                component={BottomTabNavigator}
+                options={{
+                  animationEnabled: false,
+                }}
               />
             </Stack.Group>
           )}
