@@ -73,6 +73,22 @@ export const emitChatResponseChunk = async (userId, chunk, index) => {
 };
 
 /**
+ * Emit typing indicator for chat
+ *
+ * WHEN: user or agent is typing
+ *
+ * @param {string} userId
+ * @param {boolean} isTyping
+ */
+export const emitChatTyping = async (userId, isTyping = true) => {
+  // Use available event key or fallback to a safe string
+  const eventKey = (SOCKET_EVENTS?.CHAT?.TYPING) || (SOCKET_EVENTS?.CHAT?.TYPING_START) || 'chat:typing';
+  return await safeEmit(userId, eventKey, {
+    isTyping: !!isTyping,
+  });
+};
+
+/**
  * Emit when full chat response is complete
  * 
  * WHEN: agenticChat.controller.js finishes generating
@@ -530,6 +546,7 @@ export const broadcastUserOffline = async (userId) => {
 export default {
   // Chat
   emitChatStart,
+  emitChatTyping,
   emitChatResponseChunk,
   emitChatResponseComplete,
   emitChatError,

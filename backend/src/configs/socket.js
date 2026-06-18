@@ -3,10 +3,12 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 
+// Module-scoped socket instance and user tracking so helper functions can be exported
+let io = null;
 const connectedUsers = new Map();
 
 export const initializeSocket = (httpServer) => {
-  const io = new Server(httpServer, {
+  io = new Server(httpServer, {
     cors: {
       origin: process.env.SOCKET_CORS_ORIGIN || "http://localhost:3000",
       methods: ["GET", "POST"],
@@ -86,61 +88,6 @@ export const initializeSocket = (httpServer) => {
     });
   });
 
-  // ============================================
-  // HELPER FUNCTIONS
-  // ============================================
-
-  const getConnectedUsers = () => connectedUsers;
-
-  const getUserSocket = (userId) => connectedUsers.get(userId) || null;
-
-  const isUserOnline = (userId) => connectedUsers.has(userId);
-
-  const getUsersCount = () => connectedUsers.size;
-
-  const emitToUser = (userId, eventName, data) => {
-    try {
-      const user = connectedUsers.get(userId);
-      if (!user) {
-        console.warn(`[Socket] User ${userId} not online. Event: ${eventName}`);
-        return false;
-      }
-      io.to(`user:${userId}`).emit(eventName, data);
-      console.log(`[Socket] Event sent to ${userId}: ${eventName}`);
-      return true;
-    } catch (error) {
-      console.error(`[Socket] Error emitting to ${userId}:`, error.message);
-      return false;
-    }
-  };
-
-  const emitToAll = (eventName, data) => {
-    try {
-      io.emit(eventName, data);
-      console.log(`[Socket] Broadcasted to all users: ${eventName}`);
-      return true;
-    } catch (error) {
-      console.error(`[Socket] Error broadcasting:`, error.message);
-      return false;
-    }
-  };
-
-  const emitToAllExcept = (userId, eventName, data) => {
-    try {
-      const user = connectedUsers.get(userId);
-      if (!user) {
-        io.emit(eventName, data);
-      } else {
-        io.except(user.socketId).emit(eventName, data);
-      }
-      console.log(`[Socket] Event sent to all except ${userId}: ${eventName}`);
-      return true;
-    } catch (error) {
-      console.error(`[Socket] Error in emitToAllExcept:`, error.message);
-      return false;
-    }
-  };
-
   return {
     io,
     getConnectedUsers,
@@ -151,6 +98,83 @@ export const initializeSocket = (httpServer) => {
     emitToAll,
     emitToAllExcept,
   };
+};
+
+// ============================================
+// HELPER FUNCTIONS (exported at module scope)
+// ============================================
+
+const getConnectedUsers = () => connectedUsers;
+
+const getUserSocket = (userId) => connectedUsers.get(userId) || null;
+
+const isUserOnline = (userId) => connectedUsers.has(userId);
+
+const getUsersCount = () => connectedUsers.size;
+
+const emitToUser = (userId, eventName, data) => {
+  try {
+    const user = connectedUsers.get(userId);
+    if (!user || !io) {
+      console.warn(`[Socket] User ${userId} not online or io not initialized. Event: ${eventName}`);
+      return false;
+    }
+    io.to(`user:${userId}`).emit(eventName, data);
+    console.log(`[Socket] Event sent to ${userId}: ${eventName}`);
+    return true;
+  } catch (error) {
+    console.error(`[Socket] Error emitting to ${userId}:`, error.message);
+    return false;
+  }
+};
+
+const emitToAll = (eventName, data) => {
+  try {
+    if (!io) {
+      console.warn(`[Socket] io not initialized. Cannot broadcast: ${eventName}`);
+      return false;
+    }
+    io.emit(eventName, data);
+    console.log(`[Socket] Broadcasted to all users: ${eventName}`);
+    return true;
+  } catch (error) {
+    console.error(`[Socket] Error broadcasting:`, error.message);
+    return false;
+  }
+};
+
+const emitToAllExcept = (userId, eventName, data) => {
+  try {
+    if (!io) {
+      console.warn(`[Socket] io not initialized. Cannot emit to all except ${userId}: ${eventName}`);
+      return false;
+    }
+    const user = connectedUsers.get(userId);
+    if (!user) {
+      io.emit(eventName, data);
+    } else if (typeof io.except === 'function') {
+      // Some socket.io versions support .except
+      io.except(user.socketId).emit(eventName, data);
+    } else {
+      // Fallback: broadcast to room 'notifications' but exclude by not targeting the user's room
+      io.to('notifications').emit(eventName, data);
+    }
+    console.log(`[Socket] Event sent to all except ${userId}: ${eventName}`);
+    return true;
+  } catch (error) {
+    console.error(`[Socket] Error in emitToAllExcept:`, error.message);
+    return false;
+  }
+};
+
+export {
+  emitToUser,
+  emitToAll,
+  emitToAllExcept,
+  getConnectedUsers,
+  getUserSocket,
+  isUserOnline,
+  getUsersCount,
 };
 
 export default initializeSocket;

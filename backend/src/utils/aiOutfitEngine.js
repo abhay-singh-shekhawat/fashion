@@ -4,7 +4,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export const generateAIOutfit = async ({ profile, weather, wardrobe, occasion }) => {
+export const generateAIOutfit = async ({ profile, weather, occasion }) => {
   const prompt = `
 You are a fashion stylist AI.
 
@@ -20,14 +20,10 @@ Weather:
 - Condition: ${weather.condition || "normal"}
 - Daytime: ${weather.isDay}
 
-Wardrobe:
-${wardrobe.map(item => `- ${item.name} (${item.color}, ${item.category})`).join("\n")}
-
 Occasion: ${occasion}
 
 TASK:
-1. Suggest 2 outfits
-2. Prefer wardrobe items if available
+1. Suggest 2 outfits for the user based on the above information. Each outfit should consist of 2-4 items.
 3. Keep it realistic for India
 4. Keep it concise
 

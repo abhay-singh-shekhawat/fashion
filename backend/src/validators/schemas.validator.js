@@ -6,7 +6,7 @@ export const profileSchema = z.object({
     weightKg: z.number().min(30).max(200),
     age: z.number().min(12).max(100),
     gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).default('prefer_not_to_say'),
-    skinTone: z.enum(['warm', 'cool', 'neutral', 'olive', 'unknown']).default('unknown')
+    skinTone: z.enum(['warm', 'cool', 'neutral', 'olive', 'unknown']).optional().default('unknown')
 });
 
 export const clothingItemSchema = z.object({

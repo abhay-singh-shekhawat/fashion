@@ -62,12 +62,10 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
   if (!profile) throw new api_error(404, "Create profile");
 
   const weather = await getWeather();
-  const items = await ClothingItem.find({ userId });
 
   const aiResult = await generateAIOutfit({
     profile,
     weather,
-    wardrobe: items,
     occasion: "daily wear",
   });
 
