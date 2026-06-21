@@ -1,5 +1,4 @@
 // Socket.IO Server Configuration - Handles real-time WebSocket connections
-
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 

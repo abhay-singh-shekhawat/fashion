@@ -3,6 +3,15 @@
 import { SOCKET_EVENTS } from "../configs/socketEvents.js";
 import { emitToUser, emitToAll, isUserOnline } from "../configs/socket.js";
 
+// Helper: use a single timestamp format (ISO string) throughout this file
+const nowIso = () => new Date().toISOString();
+
+// Helper: ensure a value is an array - return empty array for null/undefined/non-array
+const asArray = (v) => (Array.isArray(v) ? v : []);
+
+// Helper: safely get a short id string for logs / payloads
+const shortId = (id) => (typeof id === 'string' ? id.substring(0, 4) : 'unk');
+
 // Safe wrapper for socket event emissions with error handling
 const safeEmit = async (userId, eventName, data = {}) => {
   try {
@@ -13,7 +22,8 @@ const safeEmit = async (userId, eventName, data = {}) => {
 
     const enrichedData = {
       ...data,
-      timestamp: new Date().toISOString(),
+      // standardized timestamp format (ISO string)
+      timestamp: nowIso(),
     };
 
     const sent = emitToUser(userId, eventName, enrichedData);
@@ -28,7 +38,7 @@ const safeEmit = async (userId, eventName, data = {}) => {
 
     return true;
   } catch (error) {
-    console.error(`[SocketService] Error emitting ${eventName}:`, error.message);
+    console.error(`[SocketService] Error emitting ${eventName}:`, error?.message || error);
     return false;
   }
 };
@@ -44,7 +54,8 @@ const safeEmit = async (userId, eventName, data = {}) => {
 export const emitChatStart = async (userId, message) => {
   return await safeEmit(userId, SOCKET_EVENTS.CHAT.START, {
     message,
-    modelStartTime: Date.now(),
+    // standardized timestamp instead of epoch number
+    modelStartTime: nowIso(),
   });
 };
 
@@ -68,7 +79,7 @@ export const emitChatResponseChunk = async (userId, chunk, index) => {
   return await safeEmit(userId, SOCKET_EVENTS.CHAT.RESPONSE_CHUNK, {
     chunk,
     index,
-    chunkLength: chunk.length,
+    chunkLength: chunk ? chunk.length : 0,
   });
 };
 
@@ -117,8 +128,8 @@ export const emitChatResponseComplete = async (userId, fullMessage, metadata = {
  */
 export const emitChatError = async (userId, error) => {
   return await safeEmit(userId, SOCKET_EVENTS.CHAT.ERROR, {
-    error: error.message || error,
-    code: error.code || "CHAT_ERROR",
+    error: error?.message || error,
+    code: error?.code || "CHAT_ERROR",
   });
 };
 
@@ -139,7 +150,8 @@ export const emitChatError = async (userId, error) => {
 export const emitScanStart = async (userId, metadata = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.START, {
     ...metadata,
-    startTime: Date.now(),
+    // standardized ISO timestamp
+    startTime: nowIso(),
   });
 };
 
@@ -156,7 +168,7 @@ export const emitScanQueued = async (userId, jobId, position = 1) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.QUEUED, {
     jobId,
     position,
-    estimatedWait: position * 2, // ~2 seconds per job
+    estimatedWait: position * 2, // ~2 seconds per job (kept as number)
   });
 };
 
@@ -185,18 +197,20 @@ export const emitScanProgress = async (userId, percent, message) => {
 };
 
 /**
- * Emit when items are detected
- * 
- * WHEN: Worker detects clothing items
- * 
- * @param {string} userId - User's scan
- * @param {array} items - Detected items: { type, color, confidence }
+ * Defensive: ensure items is an array before using length/map
+ * - itemCount always a number
+ * - colors always an array
+ * - never throws on invalid input
  */
 export const emitScanItemsDetected = async (userId, items) => {
+  const safeItems = asArray(items);
+  const itemCount = safeItems.length;
+  const colors = safeItems.map(i => (i && typeof i.color === 'string') ? i.color : 'unknown');
+
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.ITEMS_DETECTED, {
-    itemCount: items.length,
-    items,
-    colors: items.map(i => i.color),
+    itemCount,
+    items: safeItems,
+    colors,
   });
 };
 
@@ -210,10 +224,10 @@ export const emitScanItemsDetected = async (userId, items) => {
  */
 export const emitScanComplete = async (userId, scanResult) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.COMPLETE, {
-    jobId: scanResult.jobId,
-    items: scanResult.items,
-    confidence: scanResult.confidence,
-    duration: scanResult.duration,
+    jobId: scanResult?.jobId,
+    items: asArray(scanResult?.items),
+    confidence: scanResult?.confidence,
+    duration: scanResult?.duration,
   });
 };
 
@@ -227,8 +241,8 @@ export const emitScanComplete = async (userId, scanResult) => {
  */
 export const emitScanError = async (userId, error) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.ERROR, {
-    error: error.message || error,
-    code: error.code || "SCAN_ERROR",
+    error: error?.message || error,
+    code: error?.code || "SCAN_ERROR",
   });
 };
 
@@ -249,7 +263,7 @@ export const emitScanError = async (userId, error) => {
 export const emitRatingStart = async (userId, metadata = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.CALCULATING, {
     ...metadata,
-    startTime: Date.now(),
+    startTime: nowIso(),
   });
 };
 
@@ -265,8 +279,8 @@ export const emitRatingStart = async (userId, metadata = {}) => {
 export const emitRatingWeatherDone = async (userId, score, weatherData = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.WEATHER_DONE, {
     score,
-    temperature: weatherData.temperature,
-    condition: weatherData.condition,
+    temperature: weatherData?.temperature,
+    condition: weatherData?.condition,
   });
 };
 
@@ -282,7 +296,7 @@ export const emitRatingWeatherDone = async (userId, score, weatherData = {}) => 
 export const emitRatingSkinToneDone = async (userId, score, skinToneData = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.SKINTONE_DONE, {
     score,
-    skinTone: skinToneData.skinTone,
+    skinTone: skinToneData?.skinTone,
   });
 };
 
@@ -298,7 +312,7 @@ export const emitRatingSkinToneDone = async (userId, score, skinToneData = {}) =
 export const emitRatingHarmonyDone = async (userId, score, harmonyData = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.HARMONY_DONE, {
     score,
-    explanation: harmonyData.explanation || "Good color combination",
+    explanation: harmonyData?.explanation || "Good color combination",
   });
 };
 
@@ -366,9 +380,10 @@ export const emitRatingTipsChunk = async (userId, tip, index) => {
  * @param {array} allTips - All improvement tips
  */
 export const emitRatingTipsComplete = async (userId, allTips) => {
+  const safeTips = asArray(allTips);
   return await safeEmit(userId, SOCKET_EVENTS.RATING.TIPS_COMPLETE, {
-    allTips,
-    totalTips: allTips.length,
+    allTips: safeTips,
+    totalTips: safeTips.length,
   });
 };
 
@@ -410,8 +425,8 @@ export const emitRatingComplete = async (userId, finalResult) => {
  */
 export const emitRatingError = async (userId, error) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.ERROR, {
-    error: error.message || error,
-    code: error.code || "RATING_ERROR",
+    error: error?.message || error,
+    code: error?.code || "RATING_ERROR",
   });
 };
 
@@ -490,7 +505,7 @@ export const broadcastToAll = async (eventName, data = {}) => {
   try {
     const enrichedData = {
       ...data,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(),
       broadcasted: true,
     };
 
@@ -502,7 +517,7 @@ export const broadcastToAll = async (eventName, data = {}) => {
 
     return sent;
   } catch (error) {
-    console.error(`[SocketService] Error broadcasting:`, error.message);
+    console.error(`[SocketService] Error broadcasting:`, error?.message || error);
     return false;
   }
 };
@@ -518,8 +533,8 @@ export const broadcastToAll = async (eventName, data = {}) => {
 export const broadcastUserOnline = async (userId, userData = {}) => {
   return await broadcastToAll(SOCKET_EVENTS.USER.ONLINE, {
     userId,
-    username: userData.username || `User ${userId.substring(0, 4)}`,
-    timestamp: Date.now(),
+    username: userData.username || `User ${shortId(userId)}`,
+    timestamp: nowIso(),
   });
 };
 
@@ -533,7 +548,7 @@ export const broadcastUserOnline = async (userId, userData = {}) => {
 export const broadcastUserOffline = async (userId) => {
   return await broadcastToAll(SOCKET_EVENTS.USER.OFFLINE, {
     userId,
-    timestamp: Date.now(),
+    timestamp: nowIso(),
   });
 };
 

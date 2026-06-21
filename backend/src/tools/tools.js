@@ -5,6 +5,7 @@ import scanWorker from "../workers/scanWorkerLite.js"
 import cloudinary from "../configs/cloudinary.js"
 import { scanQueuelite } from "../configs/queue.js"
 import {fetchProducts} from "../configs/serp.js"
+import crypto from 'crypto'
 
 export const tools = {
   get_daily_recommendation: {
@@ -49,9 +50,11 @@ export const tools = {
     parameters: {
       type: "object",
       properties: {
-        userId: { type: "string", description: "User ID" }
+        userId: { type: "string", description: "User ID" },
+        // standardized parameter name to imageUrl (was imageurl)
+        imageUrl: { type: "string", description: "Public image URL or data URL to scan" }
       },
-      required: ["userId","imageurl"]
+      required: ["userId","imageUrl"]
     }
   },
 
@@ -132,9 +135,14 @@ export const toolExecutors = {
 
   scan_outfit: async (args) => {
     try {
-      // Queue the scan job (you already have this in scanQueue)
+      // Validate inputs: ensure imageUrl is provided (schema requires it but double-check)
       const userId = args.userId
-      const imageUrl = args.imageUrl
+      const imageUrl = args.imageUrl || args.imageurl || null
+
+      if (!userId || !imageUrl) {
+        console.log('scan_outfit missing userId or imageUrl', args)
+        return { error: 'Missing required parameters: userId and imageUrl' }
+      }
 
       const publicId = `scan_${userId}_${Date.now()}`
       const uploadResult = await cloudinary.uploader.upload(
@@ -146,17 +154,21 @@ export const toolExecutors = {
         }
       );
   
+      // Generate image hash from the uploaded URL (or fallback to provided imageUrl)
+      const hashSource = uploadResult?.secure_url || imageUrl || '';
       const imageHash = crypto
           .createHash('sha256')
-          .update(req.file.buffer)
+          .update(hashSource)
           .digest('hex');
+  
+      const originalFileName = uploadResult?.original_filename || uploadResult?.public_id || imageUrl;
   
       await scanQueuelite.add(`process-scan`,{
           userId,
-          imageUrl: uploadResult.secure_url,
-          publicId: uploadResult.public_id,
+          imageUrl: uploadResult?.secure_url || imageUrl,
+          publicId: uploadResult?.public_id,
           imageHash: imageHash,
-          originalFileName: req.file.originalname
+          originalFileName: originalFileName
       },{
           attempts: 3,
           backoff: {type: `exponential` , delay: 5000},
@@ -179,7 +191,8 @@ export const toolExecutors = {
       const res = { json: (data) => data ,
           status: (code) => ({ json: (data) => data })
         };
-      const result = await fetchProducts(args.args?.query)
+      // use direct argument access (not nested args.args)
+      const result = await fetchProducts(args.query)
       return result
     } catch (error) {
       console.log(error,"error in shopping suggestion tool")
@@ -189,11 +202,12 @@ export const toolExecutors = {
 
   get_outfit_suggestion: async (args) => {
     try {
-      const req = { user: { id: args.userId }, body: args.args?.occasion }
+      // Use getOccasionSuggestion controller and pass occasion in body
+      const req = { user: { id: args.userId }, body: { occasion: args.occasion } }
       const res = { json: (data) => data ,
         status: (code) => ({ json: (data) => data })
       }
-      const result = await getOutfitSuggestion(req,res)
+      const result = await getOccasionSuggestion(req,res)
       return result 
     } catch (error) {
       console.log(error,`error in outfit suggestion tool`)

@@ -13,7 +13,7 @@ const clothingItemSchema = new mongoose.Schema({
     },
     category: { // hard coded for prototype
         type: String,
-        enum: ['top', 'bottom', 'outerwear', 'footwear', 'accessory', 'other'],
+        enum: ['top', 'bottom', 'outerwear', 'footwear', 'accessory', 'other', 'one_piece', 'traditional'],
         required: true
     },
     color: {
@@ -49,6 +49,10 @@ const clothingItemSchema = new mongoose.Schema({
         default: 0.85
     },
 },{timestamps : true});
+
+// Compound unique index to prevent duplicate inserts for same user + imageHash
+// sparse: true allows documents without imageHash (if any legacy doc)
+clothingItemSchema.index({ userId: 1, imageHash: 1 }, { unique: true, sparse: true });
 
 const ClothingItem = mongoose.model('ClothingItem', clothingItemSchema);
 
