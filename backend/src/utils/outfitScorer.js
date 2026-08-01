@@ -1,4 +1,4 @@
-import { getRecommendedColors } from "./skinTonePalette.js";
+import { getRecommendedColors } from "./skinTonePalatte.js";
 
 // Scoring weights
 const WEIGHTS = {

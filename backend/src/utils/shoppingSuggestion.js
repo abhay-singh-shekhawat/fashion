@@ -41,11 +41,17 @@ TASK:
 }
 `;
 
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: aiPrompt }],
-    temperature: 0.7,
-  });
+  let response;
+  try {
+    response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: aiPrompt }],
+      temperature: 0.7,
+    });
+  } catch (aiError) {
+    console.warn("OpenAI shopping suggestion failed:", aiError?.message || aiError);
+    return { suggestions: { suggestions: [] }, products: [] };
+  }
 
   const text = response.choices[0].message.content;
 

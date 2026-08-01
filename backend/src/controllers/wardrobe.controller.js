@@ -98,7 +98,7 @@ export const addClothingItem = asyncHandeler(async(req,res,next)=>{
     const { name, category, color, formality} = req.body;
 
     if (!userId || !name || !category) {
-      throw new api_error(400,"userId, name, and category are required")
+      throw new api_error(400, "userId, name, and category are required")
     }
 
     const item = new ClothingItem({
@@ -127,7 +127,7 @@ export const getWardrobe = asyncHandeler(async(req,res,next)=>{
     if (cached) return res.status(200).json(cached);
 
     if (!userId) {
-      throw new api_error(400,"userId required")
+      throw new api_error(400, "userId required")
     }
 
     const items = await ClothingItem.find({ userId }).sort({ createdAt: -1 });
@@ -144,7 +144,7 @@ export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
   const cached = await getCache(cacheKey);
   if (cached) return res.status(200).json(cached);
 
-  const profile = await BodyProfile.findOne({ userId });
+  const profile = await BodyProfile.findOne({ user: userId });
   const items = await ClothingItem.find({ userId });
 
   if (!profile || items.length === 0) {
@@ -220,13 +220,13 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
   const cached = await getCache(cacheKey);
   if (cached) return res.status(200).json(cached);
 
-  const { occasion } = req.body;
+  const occasion = req.query.occasion || req.body.occasion;
 
   if (!occasionToFormalities[occasion]) {
     throw new api_error(400, "Invalid occasion");
   }
 
-  const profile = await BodyProfile.findOne({ userId });
+  const profile = await BodyProfile.findOne({ user: userId });
   const items = await ClothingItem.find({ userId });
 
   const weather = await getWeather();

@@ -30,7 +30,7 @@ export const initializeSocket = (httpServer) => {
         return next(error);
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
       socket.data.userId = decoded.userId;
       socket.data.user = decoded;
 

@@ -16,14 +16,5 @@ services:
       - .:/app
       - /app/node_modules
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379-6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - redis_data:/data
-    # restarts: unless-stoped
-
 volumes:
   redis_data:

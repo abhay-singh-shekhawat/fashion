@@ -4,6 +4,7 @@ dotenv.config()
 import express from "express"
 import cors from "cors"
 import http from "http"
+import cookieParser from "cookie-parser"
 import  connectDB  from "./src/configs/db.js"
 import errorHandler from "./src/middlewares/errorHandler.js"
 import initializeSocket from "./src/configs/socket.js"
@@ -20,7 +21,8 @@ global.io = io
 
 // Middleware
 app.use(cors())
-app.use(express.json())
+app.use(cookieParser())
+app.use(express.json({ limit: "10mb" }))
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100,                 // limit each IP to 100 requests per windowMs
@@ -32,8 +34,6 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-
-app.use(errorHandler)
 
 // Start background workers
 import('./src/workers/scanWorker.js').catch(err => {
@@ -73,3 +73,9 @@ app.use("/api/v1/agent",agenticChat)
 
 import progressRouter from "./src/routes/progress.routes.js"
 app.use("/api/v1/progress",progressRouter)
+
+import outfitRateRouter from "./src/routes/outfitRate.routes.js"
+app.use("/api/v1/outfit",outfitRateRouter)
+
+// Error handler must be registered after all routes
+app.use(errorHandler)

@@ -12,7 +12,7 @@ export const authMiddleware = asyncHandler(async(req, res, next) => {
 
         if (!token) {
           console.error('[Auth] no token found in header or cookies');
-          throw new api_error("Unauthorized: No token provided", 401);
+          throw new api_error(401, "Unauthorized: No token provided");
         }
 
         let decoded;
@@ -21,15 +21,15 @@ export const authMiddleware = asyncHandler(async(req, res, next) => {
         } catch (err) {
           console.error('[Auth] token verification failed', err.name, err.message);
           if (err.name === 'TokenExpiredError') {
-            return next(new api_error('Unauthorized: Token expired', 401));
+            return next(new api_error(401, 'Unauthorized: Token expired'));
           }
-          return next(new api_error('Unauthorized: Invalid token', 401));
+          return next(new api_error(401, 'Unauthorized: Invalid token'));
         }
 
         const userDoc = await User.findById(decoded.userId).select('_id name email');
         if (!userDoc) {
           console.error('[Auth] user not found for id', decoded.userId);
-          throw new api_error("Unauthorized: User not found", 401);
+          throw new api_error(401, "Unauthorized: User not found");
         }
 
         // Normalize req.user to a plain object to avoid Mongoose document quirks downstream
@@ -44,7 +44,7 @@ export const authMiddleware = asyncHandler(async(req, res, next) => {
     } catch (error) {
         console.error("Authentication error:", error?.message || error);
         if (error.name === "JsonWebTokenError") {
-            return next(new api_error("Unauthorized: Invalid token", 401));
+            return next(new api_error(401, "Unauthorized: Invalid token"));
         }
         next(error);
     }

@@ -18,9 +18,9 @@ import {
   emitRatingComplete,
   emitRatingError,
   emitScanProgress,
-  emitWeatherFetched,
-  emitTipsGenerated,
-  emitOutfitScore,
+  emitRatingWeatherDone,
+  emitRatingTipsComplete,
+  emitRatingScoreDone,
 } from "../services/socketService.js";
 
 // Helper to wait for scan job completion
@@ -57,7 +57,7 @@ const waitForScanJob = async (jobId, timeout = 60000) => {
  */
 export const rateOutfitController = asyncHandler(async (req, res) => {
   const { imageUrl, occasion = "casual", detailedFeedback = false } = req.body;
-  const userId = req.user._id.toString();
+  const userId = req.user.id;
 
   if (!imageUrl) {
     throw new api_error(400, "imageUrl is required");
@@ -135,7 +135,7 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
       weatherData = await getWeather();
 
       // Emit weather fetched
-      await emitWeatherFetched(userId, {
+      await emitRatingWeatherDone(userId, 0, {
         temperature: weatherData.temperature,
         condition: weatherData.condition,
         isDay: weatherData.isDay
@@ -203,11 +203,7 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
       });
 
       // Emit outfit score
-      await emitOutfitScore(userId, {
-        overall: outfitScore.score,
-        weather: weatherScore,
-        skinTone: skinToneScore
-      });
+      await emitRatingScoreDone(userId, outfitScore.score, outfitScore.message, outfitScore.breakdown);
 
     } catch (calcError) {
       console.error("[Outfit Rating] Score calculation failed:", calcError.message);
@@ -248,10 +244,7 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
       };
 
       // Emit tips generated
-      await emitTipsGenerated(userId, {
-        tipsCount: improvementTips.tips.length,
-        tips: improvementTips.tips
-      });
+      await emitRatingTipsComplete(userId, [improvementTips.tips]);
 
     } catch (tipsError) {
       console.warn("[Outfit Rating] Tips generation failed:", tipsError.message);
@@ -318,7 +311,7 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
  */
 export const rateSavedOutfitController = asyncHandler(async (req, res) => {
   const { clothingItemIds, occasion = "casual", detailedFeedback = false } = req.body;
-  const userId = req.user._id;
+  const userId = req.user.id;
 
   if (!clothingItemIds || clothingItemIds.length === 0) {
     throw new api_error(400, "At least one clothing item is required");

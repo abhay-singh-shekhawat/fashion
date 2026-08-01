@@ -1,7 +1,7 @@
 const asyncHandeler = (requestHandeler)=>{
     return(req,res,next)=>{
-        Promise.resolve(requestHandeler(req,res,next)).catch(error=>{
-            next(error)
+        return Promise.resolve(requestHandeler(req,res,next)).catch(error=>{
+            if (typeof next === "function") { next(error) } else { throw error }
         })
     }
 }

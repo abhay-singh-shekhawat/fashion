@@ -92,6 +92,7 @@ http://localhost:3000/api/v1
 
 ### 3. Create or Update User Profile
 **Endpoint:** `POST /profile/upload/profile`
+**Endpoint:** `POST /profile/update/profile`
 
 **Purpose:** Create or update user's body profile (height, weight, age, gender, skin tone)
 

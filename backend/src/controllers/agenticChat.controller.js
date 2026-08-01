@@ -13,8 +13,8 @@ import {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const model = genAI.getGenerativeModel({
-  model: "gemini-3.1-flash-lite",
-  tools: tools,
+  model: "gemini-flash-latest",
+  tools: [{ functionDeclarations: Object.values(tools).map(({ name, description, parameters }) => ({ name, description, parameters })) }],
   systemInstruction: `You are StyleSense, a friendly, expert, and highly fashionable AI personal stylist.
 You help users with outfit suggestions, wardrobe management, color matching, occasion-based styling, shopping advice, and style progress tracking.
 
@@ -119,7 +119,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
     const imageUrl = buffer ? `data:${mimetype};base64,${buffer}` : null;
 
     if (!userId || !message) {
-      throw new api_error(400,"userId and message are required")
+      throw new api_error(400, "userId and message are required")
     }
 
     try {
@@ -137,11 +137,6 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         content: [{ type: 'text', text: String(m.content || '') }]
       }));
 
-      const chat = model.startChat({
-        history: modelHistory,
-        generationConfig: { temperature: 0.75 }
-      });
-
       // Add current message to history store (store compact object with timestamp)
       historyMsgs.push({ role: 'user', content: message, ts: Date.now() });
       // Trim history to configured max
@@ -151,15 +146,41 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       conversationHistory.set(userId, meta);
 
       const startTime = Date.now();
-      let result = await chat.sendMessage(message);
+
+      // Build the conversation contents array for generateContent.
+      // The newer Gemini API expects function responses to use role 'user'
+      // (not 'function'), so we manage the conversation manually.
+      const contents = [];
+
+      // Add history (user/model turns) - exclude the just-pushed current message
+      for (const m of (Array.isArray(historyMsgs) ? historyMsgs.slice(0, -1) : [])) {
+        if (m.role === 'user') {
+          contents.push({ role: 'user', parts: [{ text: String(m.content || '') }] });
+        } else if (m.role === 'assistant') {
+          contents.push({ role: 'model', parts: [{ text: String(m.content || '') }] });
+        }
+      }
+
+      // Add current user message (with optional image)
+      const userParts = [{ text: message }];
+      if (imageUrl) {
+        const m = /^data:([^;]+);base64,(.*)$/.exec(imageUrl);
+        if (m) {
+          userParts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+        }
+      }
+      contents.push({ role: 'user', parts: userParts });
 
       let finalReply = "";
       let chunkIndex = 0;
-      
-      while(true){
-        const parts = result.response?.candidates?.[0]?.content?.parts || [];
+      let result;
 
-        // Find functionCall in parts if any
+      // Loop: call model, handle function calls, repeat
+      const MAX_TOOL_ITERATIONS = 6;
+      for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        result = await model.generateContent({ contents });
+
+        const parts = result.response?.candidates?.[0]?.content?.parts || [];
         const functionPart = parts.find(p => p.functionCall);
         const functionCall = functionPart?.functionCall;
 
@@ -174,7 +195,6 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
             // Simulate streaming delay
             await new Promise(resolve => setTimeout(resolve, 30));
           }
-          
           break;
         }
 
@@ -186,20 +206,17 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
           try {
             parsedArgs = JSON.parse(parsedArgs);
           } catch (e) {
-            // leave as string if not JSON
             parsedArgs = { raw: parsedArgs };
           }
         }
 
         let toolResult;
-        // Ensure tool executor exists before calling
         const executor = toolExecutors[name];
         if (!executor) {
           console.warn(`[Chat] Requested unknown tool: ${name}`);
           toolResult = { error: `Unknown tool: ${name}`, tool: name };
         } else {
           try {
-            // if imageUrl provided in parsed args or from uploaded image, prefer that
             if (parsedArgs && (parsedArgs.imageUrl || imageUrl)) {
               const iu = parsedArgs.imageUrl || imageUrl;
               toolResult = await executor({ userId, imageUrl: iu, ...parsedArgs });
@@ -208,20 +225,19 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
             }
           } catch (toolErr) {
             console.error(`[Chat] Tool ${name} execution failed:`, toolErr?.message || toolErr);
-            // return safe error payload to the model instead of throwing
             toolResult = { error: `Tool ${name} failed`, message: toolErr?.message || String(toolErr) };
           }
         }
 
-        // Send function response back into the chat
-        result = await chat.sendMessage([
-          {
-            functionResponse: {
-              name,
-              response: toolResult
-            }
-          }
-        ]);
+        // Append the model's function-call turn (preserving thoughtSignature if present)
+        // and the function response (role 'user').
+        // The newer Gemini API requires thought_signature to be echoed back.
+        const modelParts = parts.map((p) => ({ ...p }));
+        contents.push({ role: 'model', parts: modelParts });
+        contents.push({
+          role: 'user',
+          parts: [{ functionResponse: { name, response: typeof toolResult === "object" && toolResult ? toolResult : { result: String(toolResult) } } }],
+        });
       }
 
       // Robust parsing of finalReply: try to extract JSON, else wrap as message
@@ -245,7 +261,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       // Emit typing stop and completion
       await emitChatTyping(userId, false);
       await emitChatResponseComplete(userId, finalReply, {
-        model: "gemini-3.1-flash-lite",
+        model: "gemini-flash-latest",
         duration: Date.now() - startTime
       });
 

@@ -46,7 +46,6 @@ const bodyProfileSchema = new mongoose.Schema({
 
 bodyProfileSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
-    next();
 });
 
 const BodyProfile = mongoose.model("BodyProfile", bodyProfileSchema);

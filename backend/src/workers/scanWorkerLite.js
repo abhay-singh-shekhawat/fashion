@@ -17,7 +17,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
             return { status: 'we have already told about the same outfit' };
         }
 
-        const model = genAi.getGenerativeModel({model: `gemini-3.1-flash-lite`})
+        const model = genAi.getGenerativeModel({model: `gemini-1.5-flash`})
         const prompt = `Analyze this outfit image in detail for a fashion app.
         Return JSON only with this structure:
         {

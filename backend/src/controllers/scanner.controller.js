@@ -31,14 +31,14 @@ const detectOutfit = async(imagePath)=>{
 export const scanOutfit = asyncHandeler(async(req,res,next)=>{
     const userId  = req.user.id;
     if (!userId) {
-        throw new api_error(400,"userId is required")
+        throw new api_error(400, "userId is required")
     }
-    const profile = await BodyProfile.findOne({ userId });
+    const profile = await BodyProfile.findOne({ user: userId });
     if (!profile) {
-        throw new api_error(404,"Profile not found — create one first")
+        throw new api_error(404, "Profile not found — create one first")
     }
     if (!req.file) {
-        throw new api_error(400,"No image uploaded")
+        throw new api_error(400, "No image uploaded")
     }
 
     try {

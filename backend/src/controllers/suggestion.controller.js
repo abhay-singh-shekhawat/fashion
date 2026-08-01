@@ -11,13 +11,13 @@ import { generateAIOutfit } from "../utils/aiOutfitEngine.js"
 
 export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
   const userId = req.user.id;
-  const { occasion } = req.body
+  const { occasion } = req.query.occasion || req.body.occasion
 
   const cacheKey = generateCacheKey("occasion_sug", userId);
   const cached = await getCache(cacheKey);
   if (cached) return res.status(200).json(cached);
 
-  const profile = await BodyProfile.findOne({ userId });
+  const profile = await BodyProfile.findOne({ user: userId });
   if (!profile) throw new api_error(404, "create a profile");
 
   const weather = await getWeather();
@@ -58,7 +58,7 @@ export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
   const cached = await getCache(cacheKey);
   if (cached) return res.status(200).json(cached);
 
-  const profile = await BodyProfile.findOne({ userId });
+  const profile = await BodyProfile.findOne({ user: userId });
   if (!profile) throw new api_error(404, "Create profile");
 
   const weather = await getWeather();
@@ -96,12 +96,12 @@ export const getShoppingSuggestions = asyncHandeler(async (req, res) => {
     const userId  = req.user.id;
 
     if (!userId) {
-        throw new api_error(400,"userId is required")
+        throw new api_error(400, "userId is required")
     }
 
-    const profile = await BodyProfile.findOne({ userId });
+    const profile = await BodyProfile.findOne({ user: userId });
     if (!profile) {
-        throw new api_error(404,"Create your body profile first")
+        throw new api_error(404, "Create your body profile first")
     }
 
     const wardrobeItems = await ClothingItem.find({ userId }).sort({ addedAt: -1 });

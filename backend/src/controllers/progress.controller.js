@@ -7,7 +7,7 @@ export const getProgress = asyncHandeler(async(req,res,next)=>{
     const userId  = req.user.id;
 
     if (!userId) {
-        throw new api_error(400,"userId required")
+        throw new api_error(400, "userId required")
     }
 
     let progress = await UserProgress.findOne({ userId });

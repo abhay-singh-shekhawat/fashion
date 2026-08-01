@@ -17,7 +17,7 @@ export const register = asyncHandeler(async (req, res) => {
 
     const userId = user._id.toString();
 
-    await new BodyProfile({ userId }).save({ validateBeforeSave: false });
+    await new BodyProfile({ user: userId }).save({ validateBeforeSave: false });
     await new UserProgress({ userId }).save({ validateBeforeSave: false });
 
     const accessToken = await user.generateAccessToken()
