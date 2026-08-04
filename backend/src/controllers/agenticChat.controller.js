@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { tools, toolExecutors } from "../tools/tools.js";
 import asyncHandeler from "../utils/asyncHandler.js";
 import { api_error } from "../utils/errorHandler.js";
+import BodyProfile from "../models/profile.model.js";
 import {
   emitChatStart,
   emitChatResponseChunk,
@@ -11,6 +12,25 @@ import {
 } from "../services/socketService.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Timeout configuration (in ms)
+const CHAT_TOTAL_TIMEOUT_MS = 25000;       // hard cap for the whole chat request
+const MODEL_CALL_TIMEOUT_MS = 15000;       // per Gemini call
+const TOOL_CALL_TIMEOUT_MS = 10000;         // per tool executor call
+
+// Helper: race a promise against a timeout. Resolves with the original result or rejects with a Timeout error.
+const withTimeout = (promise, ms, label) => {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`${label} timed out after ${ms}ms`);
+      err.status = 504;
+      err.code = 'TIMEOUT';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
 
 const model = genAI.getGenerativeModel({
   model: "gemini-flash-latest",
@@ -27,6 +47,12 @@ Rules:
 - If the user wants shopping advice or "what should I buy" → use get_shopping_suggestions.
 - If the user mentions an occasion (office, party, gym, interview, date) → use get_occasion_suggestion.
 - You can call multiple tools if needed.
+
+Tool error handling:
+- Tools may return a structured error object with fields: { error: true, status, message, userGuidance }.
+- If a tool returns status 404, the user has not completed a required setup step (e.g. body profile, wardrobe items). Read the message and tell the user clearly what they need to do (e.g. "Please create your body profile first so I can give personalized recommendations.").
+- If a tool returns any other error, apologize briefly and ask the user to try again.
+- Do NOT invent data when a tool fails. Always rely on the tool's message.
 
 Always respond in a natural, conversational way after using tools.`
 });
@@ -171,14 +197,60 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       }
       contents.push({ role: 'user', parts: userParts });
 
+      // Early profile check: if the request likely needs a profile and none exists, short‑circuit.
+      const lowerMsg = message?.toLowerCase() || "";
+      const likelyNeedsProfile = lowerMsg.includes("today") || lowerMsg.includes("now") ||
+                                lowerMsg.includes("daily") || lowerMsg.includes("weather");
+      let shortCircuit = null;
+
+      if (likelyNeedsProfile) {
+        try {
+          const profile = await BodyProfile.findOne({ user: userId });
+          if (!profile) {
+            shortCircuit = {
+              message: "Please create your body profile first so I can give personalized recommendations.",
+              reason: "missing_profile"
+            };
+          }
+        } catch (e) {
+          console.error("[Chat] Profile check failed:", e?.message || e);
+        }
+      }
+
       let finalReply = "";
       let chunkIndex = 0;
       let result;
 
       // Loop: call model, handle function calls, repeat
       const MAX_TOOL_ITERATIONS = 6;
-      for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        result = await model.generateContent({ contents });
+      if (!shortCircuit) {
+        for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        // Hard cap on the whole chat request
+        if (Date.now() - startTime > CHAT_TOTAL_TIMEOUT_MS) {
+          console.warn(`[Chat] Total timeout exceeded for user ${userId}`);
+          shortCircuit = {
+            message: "I'm taking a bit too long to respond. Please try again in a moment.",
+            reason: 'total_timeout'
+          };
+          break;
+        }
+
+        try {
+          result = await withTimeout(
+            model.generateContent({ contents }),
+            MODEL_CALL_TIMEOUT_MS,
+            'Gemini model call'
+          );
+        } catch (modelErr) {
+          console.error(`[Chat] Model call failed:`, modelErr?.message || modelErr);
+          shortCircuit = {
+            message: modelErr?.code === 'TIMEOUT'
+              ? "The AI service is taking too long. Please try again."
+              : "I'm having trouble reaching my AI brain right now. Please try again shortly.",
+            reason: 'model_error'
+          };
+          break;
+        }
 
         const parts = result.response?.candidates?.[0]?.content?.parts || [];
         const functionPart = parts.find(p => p.functionCall);
@@ -214,19 +286,47 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         const executor = toolExecutors[name];
         if (!executor) {
           console.warn(`[Chat] Requested unknown tool: ${name}`);
-          toolResult = { error: `Unknown tool: ${name}`, tool: name };
+          toolResult = { error: true, status: 400, message: `Unknown tool: ${name}`, tool: name };
         } else {
           try {
-            if (parsedArgs && (parsedArgs.imageUrl || imageUrl)) {
-              const iu = parsedArgs.imageUrl || imageUrl;
-              toolResult = await executor({ userId, imageUrl: iu, ...parsedArgs });
-            } else {
-              toolResult = await executor({ userId, ...(parsedArgs || {}) });
-            }
+            const execPromise = (parsedArgs && (parsedArgs.imageUrl || imageUrl))
+              ? executor({ userId, imageUrl: parsedArgs.imageUrl || imageUrl, ...parsedArgs })
+              : executor({ userId, ...(parsedArgs || {}) });
+            toolResult = await withTimeout(execPromise, TOOL_CALL_TIMEOUT_MS, `Tool ${name}`);
           } catch (toolErr) {
             console.error(`[Chat] Tool ${name} execution failed:`, toolErr?.message || toolErr);
-            toolResult = { error: `Tool ${name} failed`, message: toolErr?.message || String(toolErr) };
+            toolResult = {
+              error: true,
+              status: toolErr?.status || 500,
+              message: toolErr?.message || String(toolErr),
+              tool: name
+            };
           }
+        }
+
+        // Detect structured errors from tools. If a tool reports a 404 (missing profile/wardrobe)
+        // or a 504 (timeout), short-circuit with a clear, user-facing message instead of looping
+        // back to the model with a generic apology.
+        if (toolResult && typeof toolResult === 'object' && toolResult.error === true) {
+          if (toolResult.status === 404) {
+            console.log(`[Chat] Tool ${name} reported 404:`, toolResult.message);
+            shortCircuit = {
+              message: toolResult.message || 'A required setup step is missing.',
+              reason: 'missing_setup',
+              tool: name
+            };
+            break;
+          }
+          if (toolResult.status === 504) {
+            console.log(`[Chat] Tool ${name} timed out:`, toolResult.message);
+            shortCircuit = {
+              message: "I'm having trouble reaching one of my services right now. Please try again in a moment.",
+              reason: 'tool_timeout',
+              tool: name
+            };
+            break;
+          }
+          // For other errors, still let the model see the structured error so it can apologize.
         }
 
         // Append the model's function-call turn (preserving thoughtSignature if present)
@@ -238,6 +338,11 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
           role: 'user',
           parts: [{ functionResponse: { name, response: typeof toolResult === "object" && toolResult ? toolResult : { result: String(toolResult) } } }],
         });
+      }
+
+      // If we short-circuited (timeout, model error, or missing setup), build a friendly reply.
+      if (shortCircuit) {
+        finalReply = shortCircuit.message;
       }
 
       // Robust parsing of finalReply: try to extract JSON, else wrap as message
@@ -270,7 +375,8 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         reply: parsedReply,
         success: true
       });
-    } catch (error) {
+    }
+  } catch (error) {
       console.error("[Chat] Error:", error?.message || error);
       try { await emitChatError(req.body?.userId || req.body?.userId, error?.message || error); } catch(e){}
       throw error;

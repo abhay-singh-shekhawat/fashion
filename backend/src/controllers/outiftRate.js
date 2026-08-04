@@ -82,45 +82,32 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
 
     const publicId = `${userId}-${Date.now()}`;
 
-    // ========== SCAN IMAGE ==========
-    let scanResult;
-    try {
-      const job = await scanQueuelite.add("scan", {
-        userId,
-        imageUrl,
-        publicId,
-        imageHash
-      });
+    // ========== SCAN IMAGE (ASYNC) ==========
+    const job = await scanQueuelite.add("scan", {
+      userId,
+      imageUrl,
+      publicId,
+      imageHash,
+      occasion,
+      detailedFeedback
+    });
 
-      console.log(`[Outfit Rating] Scan job queued: ${job.id}`);
-      
-      // Emit progress
-      await emitScanProgress(userId, {
-        status: "processing",
-        message: "Analyzing clothing items...",
-        progress: 25
-      });
+    console.log(`[Outfit Rating] Scan job queued: ${job.id}`);
+    
+    // Emit progress
+    await emitScanProgress(userId, {
+      status: "queued",
+      message: "Scan job queued successfully. Processing in background...",
+      progress: 10,
+      jobId: job.id
+    });
 
-      scanResult = await waitForScanJob(job.id);
-
-      if (!scanResult?.items || scanResult.items.length === 0) {
-        await emitRatingError(userId, "No clothing items detected in image");
-        throw new api_error(400, "No clothing items detected in image");
-      }
-
-      // Emit scan progress update
-      await emitScanProgress(userId, {
-        status: "complete",
-        message: "Items detected successfully",
-        progress: 50,
-        itemsCount: scanResult.items.length
-      });
-
-    } catch (scanError) {
-      console.error("[Outfit Rating] Scan failed:", scanError.message);
-      await emitRatingError(userId, `Scan failed: ${scanError.message}`);
-      throw new api_error(400, `Scan failed: ${scanError.message}`);
-    }
+    return res.status(202).json({
+      success: true,
+      message: "Scan job queued successfully. Processing in background...",
+      jobId: job.id,
+      note: "You will be notified via WebSocket when processing is complete."
+    });
 
     // ========== GET WEATHER ==========
     let weatherData;

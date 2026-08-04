@@ -30,7 +30,7 @@ function request(method, path, body = null, headers = {}, isMultipart = false) {
       path: url.pathname + url.search,
       method,
       headers: { ...headers },
-      timeout: 10000,
+      timeout: 30000,
     };
 
     let payload = null;
@@ -56,6 +56,80 @@ function request(method, path, body = null, headers = {}, isMultipart = false) {
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+// Helper to send multipart/form-data with a file upload
+function requestMultipart(method, path, fields = {}, fileField = null, fileBuffer = null, fileName = 'test.jpg', mimeType = 'image/jpeg', headers = {}) {
+  return new Promise((resolve) => {
+    const url = new URL(BASE + path);
+    const boundary = '----TestBoundary' + Date.now();
+    const chunks = [];
+
+    // Add text fields
+    for (const [key, value] of Object.entries(fields)) {
+      chunks.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="${key}"\r\n\r\n` +
+        `${value}\r\n`
+      ));
+    }
+
+    // Add file field
+    if (fileField && fileBuffer) {
+      chunks.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="${fileField}"; filename="${fileName}"\r\n` +
+        `Content-Type: ${mimeType}\r\n\r\n`
+      ));
+      chunks.push(fileBuffer);
+      chunks.push(Buffer.from('\r\n'));
+    }
+
+    // End boundary
+    chunks.push(Buffer.from(`--${boundary}--\r\n`));
+
+    const payload = Buffer.concat(chunks);
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname + url.search,
+      method,
+      headers: {
+        ...headers,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': payload.length,
+      },
+      timeout: 30000,
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = JSON.parse(data); } catch { parsed = data; }
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+
+    req.on('error', (err) => resolve({ status: 0, body: { error: err.message } }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, body: { error: 'timeout' } }); });
+
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Create a minimal valid JPEG buffer (1x1 pixel)
+function createTestImageBuffer() {
+  // Minimal 1x1 JPEG
+  return Buffer.from(
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
+    'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
+    'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==',
+    'base64'
+  );
 }
 
 async function runTests() {
@@ -94,10 +168,11 @@ async function runTests() {
   const auth = { Authorization: `Bearer ${accessToken}` };
 
   // 4. POST /profile/upload/profile
+  // Note: register auto-creates an empty profile, so 409 (already exists) is valid
   r = await request('POST', '/profile/upload/profile', {
     heightCm: 175, weightKg: 70, age: 28, gender: 'male', skinTone: 'warm',
   }, auth);
-  if (r.status === 200 || r.status === 201) logResult('POST /profile/upload/profile', 'PASS', r.status);
+  if (r.status === 200 || r.status === 201 || r.status === 409) logResult('POST /profile/upload/profile', 'PASS', r.status, r.status === 409 ? '(auto-created on register)' : '');
   else logResult('POST /profile/upload/profile', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
   // 5. PUT /profile/update/profile
@@ -109,7 +184,7 @@ async function runTests() {
 
   // 6. GET /profile/get/profile
   r = await request('GET', '/profile/get/profile', null, auth);
-  if (r.status === 200 && r.body?.userId) logResult('GET /profile/get/profile', 'PASS', r.status);
+  if (r.status === 200 && (r.body?.user || r.body?.userId)) logResult('GET /profile/get/profile', 'PASS', r.status);
   else logResult('GET /profile/get/profile', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
   // 7. POST /wardrobe/add/item
@@ -143,42 +218,86 @@ async function runTests() {
   if (r.status === 400) logResult('POST /scan/outfit (no file)', 'PASS', r.status, 'correctly rejected');
   else logResult('POST /scan/outfit (no file)', 'FAIL', r.status, 'should be 400');
 
-  // 12. POST /agent/chat (no message - should 400)
+  // 12. POST /scan/outfit (with file - success path)
+  const testImage = createTestImageBuffer();
+  r = await requestMultipart('POST', '/scan/outfit', {}, 'image', testImage, 'test-outfit.jpg', 'image/jpeg', auth);
+  if (r.status === 200 && r.body?.success === true) {
+    logResult('POST /scan/outfit (with file)', 'PASS', r.status, `jobId=${r.body?.jobId}`);
+  } else {
+    logResult('POST /scan/outfit (with file)', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
+  }
+
+  // 13. POST /agent/chat (no message - should 400)
   r = await request('POST', '/agent/chat', { userId: testUserId }, auth);
   if (r.status === 400) logResult('POST /agent/chat (no msg)', 'PASS', r.status, 'correctly rejected');
   else logResult('POST /agent/chat (no msg)', 'FAIL', r.status, 'should be 400');
 
-  // 13. GET /suggestion/get/occasion/suggestions
+  // 14. POST /agent/chat (with message - success path)
+  r = await request('POST', '/agent/chat', { userId: testUserId, message: 'What should I wear today?' }, auth);
+  if (r.status === 200 && r.body?.success === true) {
+    logResult('POST /agent/chat (with msg)', 'PASS', r.status, 'reply received');
+  } else {
+    logResult('POST /agent/chat (with msg)', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
+  }
+
+  // 15. GET /suggestion/get/occasion/suggestions
   r = await request('GET', '/suggestion/get/occasion/suggestions?occasion=office', null, auth);
   if (r.status === 200 || r.status === 404) logResult('GET /suggestion/get/occasion/suggestions', 'PASS', r.status);
   else logResult('GET /suggestion/get/occasion/suggestions', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
-  // 14. GET /suggestion/get/daily/recommendations
+  // 16. GET /suggestion/get/daily/recommendations
   r = await request('GET', '/suggestion/get/daily/recommendations', null, auth);
   if (r.status === 200 || r.status === 404) logResult('GET /suggestion/get/daily/recommendations', 'PASS', r.status);
   else logResult('GET /suggestion/get/daily/recommendations', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
-  // 15. GET /suggestion/get/shopping
+  // 17. GET /suggestion/get/shopping
   r = await request('GET', '/suggestion/get/shopping', null, auth);
   if (r.status === 200 || r.status === 404) logResult('GET /suggestion/get/shopping', 'PASS', r.status);
   else logResult('GET /suggestion/get/shopping', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
-  // 16. GET /progress/get/progress
+  // 18. GET /progress/get/progress
   r = await request('GET', '/progress/get/progress', null, auth);
   if (r.status === 200) logResult('GET /progress/get/progress', 'PASS', r.status);
   else logResult('GET /progress/get/progress', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
 
-  // 17. POST /outfit/rate (no imageUrl - should 400)
+  // 19. POST /outfit/rate (no imageUrl - should 400)
   r = await request('POST', '/outfit/rate', {}, auth);
   if (r.status === 400) logResult('POST /outfit/rate (no imageUrl)', 'PASS', r.status, 'correctly rejected');
   else logResult('POST /outfit/rate (no imageUrl)', 'FAIL', r.status, 'should be 400');
 
-  // 18. POST /outfit/rate-saved (no items - should 400)
+  // 20. POST /outfit/rate (with imageUrl - success path)
+  // Note: Now returns 202 Accepted (Async)
+  r = await request('POST', '/outfit/rate', {
+    imageUrl: 'https://picsum.photos/400/500',
+    occasion: 'casual',
+  }, auth);
+  if ((r.status === 200 || r.status === 202) && r.body?.success === true) {
+    logResult('POST /outfit/rate (with imageUrl)', 'PASS', r.status, `jobId=${r.body?.jobId || 'N/A'}`);
+  } else {
+    logResult('POST /outfit/rate (with imageUrl)', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
+  }
+
+  // 21. POST /outfit/rate-saved (no items - should 400)
   r = await request('POST', '/outfit/rate-saved', {}, auth);
   if (r.status === 400) logResult('POST /outfit/rate-saved (no items)', 'PASS', r.status, 'correctly rejected');
   else logResult('POST /outfit/rate-saved (no items)', 'FAIL', r.status, 'should be 400');
 
-  // 19. Auth check - no token (should 401)
+  // 22. POST /outfit/rate-saved (with items - success path)
+  if (testItemId) {
+    r = await request('POST', '/outfit/rate-saved', {
+      clothingItemIds: [testItemId],
+      occasion: 'casual',
+    }, auth);
+    if (r.status === 200 && r.body?.success === true) {
+      logResult('POST /outfit/rate-saved (with items)', 'PASS', r.status, `score=${r.body?.data?.score}`);
+    } else {
+      logResult('POST /outfit/rate-saved (with items)', 'FAIL', r.status, JSON.stringify(r.body).slice(0, 100));
+    }
+  } else {
+    logResult('POST /outfit/rate-saved (with items)', 'FAIL', 0, 'skipped - no testItemId available');
+  }
+
+  // 23. Auth check - no token (should 401)
   r = await request('GET', '/profile/get/profile');
   if (r.status === 401) logResult('GET /profile/get/profile (no auth)', 'PASS', r.status, 'correctly rejected');
   else logResult('GET /profile/get/profile (no auth)', 'FAIL', r.status, 'should be 401');

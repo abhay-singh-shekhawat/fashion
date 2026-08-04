@@ -14,7 +14,9 @@ http://localhost:3000/api/v1
 4. [Scan Routes](#scan-routes)
 5. [Chat Agent Routes](#chat-agent-routes)
 6. [Suggestion Routes](#suggestion-routes)
-7. [Socket.IO Events](#socketio-events)
+7. [Progress Routes](#progress-routes)
+8. [Outfit Rating Routes](#outfit-rating-routes)
+9. [Socket.IO Events](#socketio-events)
 
 ---
 
@@ -92,7 +94,7 @@ http://localhost:3000/api/v1
 
 ### 3. Create or Update User Profile
 **Endpoint:** `POST /profile/upload/profile`
-**Endpoint:** `POST /profile/update/profile`
+**Endpoint:** `PUT /profile/update/profile`
 
 **Purpose:** Create or update user's body profile (height, weight, age, gender, skin tone)
 
@@ -521,6 +523,181 @@ http://localhost:3000/api/v1
 
 ---
 
+## Progress Routes
+
+### 14. Get User Progress
+**Endpoint:** `GET /progress/get/progress`
+
+**Purpose:** Retrieve the current user's progress, level, points, and streak
+
+**Authentication Required:** Yes (Bearer Token)
+
+**Response (200 OK):**
+```json
+{
+  "userId": "507f1f77bcf86cd799439011",
+  "level": 2,
+  "totalPoints": 150,
+  "pointsToNextLevel": 50,
+  "totalOutfitsSuggested": 12,
+  "totalWardrobeItems": 15,
+  "currentStreak": 3,
+  "lastSuggestionDate": "2024-01-15T10:30:00Z",
+  "motivationalMessage": "You're becoming a style pro!",
+  "badge": "Style Enthusiast"
+}
+```
+
+**Error Codes:**
+- `400` - Missing userId
+- `401` - Unauthorized
+
+---
+
+## Outfit Rating Routes
+
+### 15. Rate Outfit (Image Scan)
+**Endpoint:** `POST /outfit/rate`
+
+**Purpose:** Upload an outfit image URL to get a detailed score, weather suitability, skin tone fit, and improvement tips
+
+**Authentication Required:** Yes (Bearer Token)
+
+**Required Parameters (Body):**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `imageUrl` | string | URL of the outfit image to scan and rate |
+
+**Optional Parameters (Body):**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `occasion` | string | Occasion context (default: "casual") |
+| `detailedFeedback` | boolean | Whether to generate detailed AI feedback (default: false) |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "score": 85,
+    "message": "Great outfit!",
+    "breakdown": {
+      "colorHarmony": 80,
+      "skinToneFit": 82,
+      "weatherSuitability": 75,
+      "formalityMatch": 90
+    },
+    "scannedOutfit": {
+      "items": [
+        { "type": "t-shirt", "color": "blue", "confidence": 0.92 }
+      ],
+      "itemCount": 1,
+      "colors": ["blue"],
+      "formalityLevel": "casual",
+      "overallStyle": "casual"
+    },
+    "weather": {
+      "temperature": 22,
+      "condition": "clear",
+      "isDay": true
+    },
+    "improvementTips": {
+      "tips": ["Consider adding...", "Try pairing with..."],
+      "mode": "quick",
+      "model": "gemini"
+    },
+    "metadata": {
+      "userId": "507f1f77bcf86cd799439011",
+      "scanConfidence": 0.85,
+      "scannedAt": "2024-01-15T10:30:00Z",
+      "imageHash": "a1b2c3d4"
+    }
+  }
+}
+```
+
+**WebSocket Events Emitted:**
+- `rating:start` - Rating started
+- `rating:weather:done` - Weather suitability calculated
+- `rating:score:done` - Outfit score calculated
+- `rating:tips:chunk` - Improvement tips streaming
+- `rating:complete` - Rating complete
+- `rating:error` - Error during rating
+
+**Error Codes:**
+- `400` - Missing imageUrl / No clothing items detected
+- `401` - Unauthorized
+- `404` - User not found
+- `500` - Score calculation error
+
+**Rewards:** 5-10 points awarded based on score
+
+---
+
+### 16. Rate Saved Outfit
+**Endpoint:** `POST /outfit/rate-saved`
+
+**Purpose:** Rate an outfit composed of saved wardrobe items and get improvement tips
+
+**Authentication Required:** Yes (Bearer Token)
+
+**Required Parameters (Body):**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `clothingItemIds` | array | Array of clothing item IDs to rate |
+
+**Optional Parameters (Body):**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `occasion` | string | Occasion context (default: "casual") |
+| `detailedFeedback` | boolean | Whether to generate detailed AI feedback (default: false) |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "score": 78,
+    "message": "Nice outfit!",
+    "breakdown": {
+      "colorHarmony": 75,
+      "skinToneFit": 80,
+      "weatherSuitability": 70,
+      "formalityMatch": 85
+    },
+    "outfit": {
+      "itemCount": 2,
+      "items": [
+        { "id": "507f1f77bcf86cd799439013", "name": "Blue T-shirt", "color": "blue", "category": "top" },
+        { "id": "507f1f77bcf86cd799439014", "name": "Black Jeans", "color": "black", "category": "bottom" }
+      ],
+      "colors": ["blue", "black"]
+    },
+    "weather": {
+      "temperature": 22,
+      "condition": "clear",
+      "isDay": true
+    },
+    "improvementTips": {
+      "tips": ["Consider adding...", "Try pairing with..."],
+      "mode": "quick"
+    },
+    "metadata": {
+      "ratedAt": "2024-01-15T10:30:00Z"
+    }
+  }
+}
+```
+
+**Error Codes:**
+- `400` - At least one clothing item is required
+- `401` - Unauthorized
+- `404` - No items found
+
+**Rewards:** 3-8 points awarded based on score
+
+---
+
 ## Socket.IO Events
 
 ### Connection Flow
@@ -668,13 +845,15 @@ Authorization: Bearer <accessToken>
 
 | Category | Count |
 |----------|-------|
-| Total API Endpoints | 13 |
+| Total API Endpoints | 17 |
 | Authentication Endpoints | 2 |
 | Profile Endpoints | 2 |
 | Wardrobe Endpoints | 4 |
 | Scan Endpoints | 1 |
 | Chat Endpoints | 1 |
 | Suggestion Endpoints | 3 |
-| Protected Routes | 11 |
+| Progress Endpoints | 1 |
+| Outfit Rating Endpoints | 2 |
+| Protected Routes | 15 |
 | Public Routes | 2 |
 

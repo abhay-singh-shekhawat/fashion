@@ -7,6 +7,23 @@ import { scanQueuelite } from "../configs/queue.js"
 import {fetchProducts} from "../configs/serp.js"
 import crypto from 'crypto'
 
+// Helper: build a structured error response that the model can understand and relay to the user.
+const buildToolError = (tool, error) => {
+  const status = error?.status || 500;
+  const message = error?.message || String(error) || 'Unknown error';
+  return {
+    success: false,
+    error: true,
+    tool,
+    status,
+    message,
+    // Provide a hint the model can use to guide the user
+    userGuidance: status === 404
+      ? 'The user has not completed a required setup step. Tell them clearly what they need to do.'
+      : 'Something went wrong while processing this request. Apologize and ask the user to try again.'
+  };
+};
+
 export const tools = {
   get_daily_recommendation: {
     name: "get_daily_recommendation",
@@ -90,7 +107,7 @@ export const toolExecutors = {
   get_daily_recommendation: async (args) => {
     try {
       const req = { user: { id: args.userId } };
-      const res = { 
+      const res = {
         json: (data) => data,
         status: (code) => ({ json: (data) => data })
       };
@@ -99,7 +116,7 @@ export const toolExecutors = {
       return result;
     } catch (error) {
       console.log(error,"error in daily recommendation tool")
-      return `Failed to get daily recommendation tool`
+      return buildToolError('get_daily_recommendation', error);
     }
   },
 
@@ -114,7 +131,7 @@ export const toolExecutors = {
       return result;
     } catch (error) {
       console.log(error,"error in get wardrob tool")
-      return `Failed to fetch wardrobe tool`
+      return buildToolError('get_wardrobe', error);
     }
   },
 
@@ -129,7 +146,7 @@ export const toolExecutors = {
       return result;
     } catch (error) {
       console.log(error,`error in get progress tool`)
-      return `Failed to get progress`
+      return buildToolError('get_progress', error);
     }
   },
 
@@ -153,16 +170,16 @@ export const toolExecutors = {
           overwrite: false,
         }
       );
-  
+
       // Generate image hash from the uploaded URL (or fallback to provided imageUrl)
       const hashSource = uploadResult?.secure_url || imageUrl || '';
       const imageHash = crypto
           .createHash('sha256')
           .update(hashSource)
           .digest('hex');
-  
+
       const originalFileName = uploadResult?.original_filename || uploadResult?.public_id || imageUrl;
-  
+
       await scanQueuelite.add(`process-scan`,{
           userId,
           imageUrl: uploadResult?.secure_url || imageUrl,
@@ -181,7 +198,7 @@ export const toolExecutors = {
       };
     } catch (error) {
       console.log(error,`error in scan tool`)
-      return `Failed to scan image`
+      return buildToolError('scan_outfit', error);
     }
   },
 
@@ -196,7 +213,7 @@ export const toolExecutors = {
       return result
     } catch (error) {
       console.log(error,"error in shopping suggestion tool")
-      return `failed to fetch shopping suggestion`
+      return buildToolError('get_shopping_suggestions', error);
     }
   },
 
@@ -208,10 +225,10 @@ export const toolExecutors = {
         status: (code) => ({ json: (data) => data })
       }
       const result = await getOccasionSuggestion(req,res)
-      return result 
+      return result
     } catch (error) {
       console.log(error,`error in outfit suggestion tool`)
-      return `failed to fetch outfit suggestions`
+      return buildToolError('get_outfit_suggestion', error);
     }
   }
 };

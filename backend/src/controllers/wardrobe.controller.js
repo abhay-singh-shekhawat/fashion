@@ -106,7 +106,8 @@ export const addClothingItem = asyncHandeler(async(req,res,next)=>{
       name,
       category,
       color: color || 'unknown',
-      formality: formality || `unknown`
+      formality: formality || `unknown`,
+      publicId: `manual_${userId}_${Date.now()}`
     });
 
     await item.save();
