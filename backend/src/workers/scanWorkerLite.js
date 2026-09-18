@@ -1,39 +1,45 @@
 import {Worker} from "bullmq"
-import { scanQueuelite } from "../configs/queue.js"
+import { workerOptions } from "../configs/queue.js"
 import ClothingItem from "../models/clothingItem.model.js"
 import BodyProfile from "../models/profile.model.js"
+import OutfitRating from "../models/outfitRating.model.js"
 import { awardPoints } from "../controllers/progress.controller.js"
 import getWeather from "../utils/getWeather.js"
-import { generateOutfitTips, generateQuickOutfitTips } from "../utils/generateOutfitTips.js"
+import { generateOutfitFeedback } from "../utils/generateOutfitTips.js"
 import {
   calculateOutfitScore,
   estimateWeatherSuitability,
-  estimateSkinToneFit
+  estimateSkinToneFit,
+  estimateFormalityMatch
 } from "../utils/outfitScorer.js"
+import { rateOutfitHarmony } from "../utils/colorHarmony.js"
 import {
   emitRatingComplete,
   emitRatingError,
   emitScanProgress,
   emitRatingWeatherDone,
+  emitRatingSkinToneDone,
+  emitRatingHarmonyDone,
   emitRatingTipsComplete,
+  emitRatingTipsStart,
   emitRatingScoreDone,
 } from "../services/socketService.js"
-import crypto from "crypto"
-import {GoogleGenerativeAI} from "@google/generative-ai"
-
-const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+import { generateJson, fetchImagePart } from "../utils/gemini.js"
 
 const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
-    const { userId, imageUrl, publicId, imageHash, occasion = "casual", detailedFeedback = false } = job.data;
+    const { userId, imageUrl, publicId, imageHash, occasion = "casual", detailedFeedback = false, jobType } = job.data;
     try {
-        // Image-level deduplication
-        const duplicateImage = await ClothingItem.exists({ userId, imageHash });
-        if (duplicateImage) {
-            console.log(`Duplicate image detected for user ${userId} - skipping`);
-            return { status: 'we have already told about the same outfit' };
+        /* Image-level deduplication. Rating jobs opt out: the user explicitly
+           asked for a score, and returning here emitted no rating event at all,
+           which left the rating screen spinning until it stalled. */
+        if (jobType !== 'rating') {
+            const duplicateImage = await ClothingItem.exists({ userId, imageHash });
+            if (duplicateImage) {
+                console.log(`Duplicate image detected for user ${userId} - skipping`);
+                return { status: 'we have already told about the same outfit' };
+            }
         }
 
-        const model = genAi.getGenerativeModel({model: `gemini-1.5-flash`})
         const prompt = `Analyze this outfit image in detail for a fashion app.
         Return JSON only with this structure:
         {
@@ -47,15 +53,8 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
           "colorPalette": ["color1", "color2"]
         }`;
 
-        const result = await model.generateContent([
-            prompt,
-            {
-                fileData: {
-                    fileUri: imageUrl
-                }
-            }
-        ]);
-        const responseText = result.response.text();
+        const imagePart = await fetchImagePart(imageUrl);
+        const { text: responseText } = await generateJson([{ text: prompt }, imagePart]);
         let analysis;
         try {
           analysis = JSON.parse(responseText);
@@ -70,13 +69,14 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         try {
           await emitScanProgress(userId, { status: "fetching_weather", message: "Checking local weather...", progress: 60 });
           weatherData = await getWeather();
-          await emitRatingWeatherDone(userId, 0, {
-            temperature: weatherData.temperature,
-            condition: weatherData.condition,
-            isDay: weatherData.isDay
-          });
         } catch (weatherError) {
-          weatherData = { temperature: 25, condition: "clear", isDay: true };
+          weatherData = {
+            temperature: 25,
+            feelsLike: 25,
+            condition: "Clear sky",
+            isDay: true,
+            location: "Jaipur"
+          };
         }
 
         // ========== CALCULATE SCORES ==========
@@ -84,40 +84,94 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         const tempCategory = weatherData.temperature > 28 ? "hot" : weatherData.temperature < 15 ? "cold" : "mild";
         const weatherScore = estimateWeatherSuitability(tempCategory, categories);
 
+        /* One object feeds both the weather card and the feedback prompt. */
+        const weatherForUi = {
+          temperature: weatherData.temperature,
+          feelsLike: weatherData.feelsLike ?? weatherData.temperature,
+          condition: weatherData.condition,
+          isDay: weatherData.isDay,
+          location: weatherData.location,
+          band: tempCategory
+        };
+
+        await emitRatingWeatherDone(userId, weatherScore, weatherForUi);
+
         let skinToneScore = 0;
         const bodyProfile = await BodyProfile.findOne({ user: userId });
         if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
           const colors = analysis.detectedItems.map(item => item.color);
           skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
+          await emitRatingSkinToneDone(userId, skinToneScore, { skinTone: bodyProfile.skinTone });
         }
 
-        const colorHarmonyEstimate = Math.min(100, 50 + (analysis.detectedItems.length * 15));
-        const formalityMap = { casual: 12, smart_casual: 18, formal: 22, party: 20, traditional: 18 };
-        const formalityMatch = formalityMap[analysis.formalityLevel] || 15;
+        /* Colour harmony and formality are judged from what was actually
+           detected — how many pairs of colours clash, and how far the outfit's
+           formality sits from the occasion the user picked. */
+        const harmony = rateOutfitHarmony(analysis.detectedItems.map(item => item.color));
+        const formality = estimateFormalityMatch({
+          occasion,
+          formalityLevel: analysis.formalityLevel
+        });
+
+        await emitRatingHarmonyDone(userId, harmony.score, { explanation: harmony.note });
+
+        /* One object each feeds the panel facts and the feedback prompt. */
+        const colorHarmonyForUi = {
+          colors: harmony.colors,
+          pairs: harmony.pairs,
+          note: harmony.note
+        };
+
+        const formalityForUi = {
+          occasion: formality.occasion,
+          detected: formality.detected,
+          wanted: formality.wanted,
+          note: formality.note
+        };
 
         const outfitScore = calculateOutfitScore({
-          colorHarmonyScore: colorHarmonyEstimate,
+          colorHarmonyScore: harmony.score,
           skinToneFit: skinToneScore,
           weatherSuitability: weatherScore,
-          formalityMatch,
+          formalityMatch: formality.score,
           isScanned: true,
           scanConfidence: 0.85
         });
 
         await emitRatingScoreDone(userId, outfitScore.score, outfitScore.message, outfitScore.breakdown);
 
-        // ========== GET TIPS ==========
+        // ========== STRUCTURED FEEDBACK ==========
         let improvementTips = null;
         try {
-          await emitScanProgress(userId, { status: "generating_tips", message: "Creating personalized suggestions...", progress: 75 });
-          const tipsResponse = detailedFeedback
-            ? await generateOutfitTips({ outfitScore, detectedItems: analysis.detectedItems, weather: weatherData, userProfile: bodyProfile || {}, occasion })
-            : await generateQuickOutfitTips({ outfitScore, detectedItems: analysis.detectedItems, weather: weatherData, userProfile: bodyProfile || {}, occasion });
+          await emitScanProgress(userId, { status: "generating_tips", message: "Writing your fit notes...", progress: 75 });
+          await emitRatingTipsStart(userId, detailedFeedback);
 
-          improvementTips = { tips: tipsResponse.tips, mode: detailedFeedback ? "detailed" : "quick", model: tipsResponse.model };
-          await emitRatingTipsComplete(userId, [improvementTips.tips]);
+          const feedback = await generateOutfitFeedback({
+            outfitScore,
+            detectedItems: analysis.detectedItems,
+            weather: weatherForUi,
+            colorHarmony: colorHarmonyForUi,
+            formality: formalityForUi,
+            userProfile: bodyProfile || {},
+            occasion,
+            detailed: detailedFeedback
+          });
+
+          improvementTips = {
+            /* Plain-text fallback for older clients and for the RateSaved screen. */
+            tips: feedback.paragraph ?? feedback.quickWins ?? [],
+            feedback: {
+              headline: feedback.headline,
+              sections: feedback.sections,
+              quickWins: feedback.quickWins
+            },
+            mode: feedback.mode,
+            model: feedback.model
+          };
+
+          await emitRatingTipsComplete(userId, [improvementTips.tips], improvementTips.feedback);
         } catch (tipsError) {
-          console.warn(`[Worker] Tips failed: ${tipsError.message}`);
+          console.warn(`[Worker] Feedback failed: ${tipsError.message}`);
         }
 
         // ========== AWARD POINTS ==========
@@ -139,14 +193,35 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
             formalityLevel: analysis.formalityLevel,
             overallStyle: analysis.overallStyle
           },
-          weather: {
-            temperature: weatherData.temperature,
-            condition: weatherData.weatherCode,
-            isDay: weatherData.isDay
-          },
+          /* The rated photo travels with the result so the panel can show what
+             was scored, not just the numbers. */
+          imageUrl,
+          weather: weatherForUi,
+          colorHarmony: colorHarmonyForUi,
+          formality: formalityForUi,
           improvementTips,
           metadata: { userId, scanConfidence: 0.85, scannedAt: new Date().toISOString(), imageHash: imageHash.substring(0, 8) }
         };
+
+        /* Only real ratings belong in history — this worker also runs scan jobs.
+           Storing is best-effort: failing to remember a fit must never lose the
+           rating the user is waiting for. */
+        if (jobType === 'rating') {
+          try {
+            const stored = await OutfitRating.record({
+              userId,
+              mode: 'photo',
+              imageUrl,
+              publicId,
+              imageHash,
+              occasion,
+              result: finalResult
+            });
+            finalResult.metadata.ratingId = stored._id;
+          } catch (historyError) {
+            console.warn(`[Worker] Rating history save failed: ${historyError.message}`);
+          }
+        }
 
         await emitRatingComplete(userId, { success: true, message: "Outfit scanning complete", rating: finalResult });
 
@@ -157,10 +232,8 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         throw error;
     }
     },{
-        connection: scanQueuelite.opts.connection,
-        concurrency: 2,
-        attempts: 3,
-        backoff: { type: `exponential`, delay: 5000}
+        ...workerOptions,
+        concurrency: 2
     })
 
     console.log('Scan worker started');

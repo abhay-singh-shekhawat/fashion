@@ -1,116 +1,94 @@
-import BodyProfile from "../models/profile.model.js"
-import getWeather from "../utils/getWeather.js"
-import asyncHandeler from "../utils/asyncHandler.js"
-import {api_error} from "../utils/errorHandler.js"
-import ClothingItem from "../models/clothingItem.model.js"
-import { awardPoints } from "./progress.controller.js"
-import { getOfflineOutfitSuggestion } from "../utils/offlineSuggestion.js"
-import { generateShoppingSuggestions } from '../utils/shoppingSuggestion.js';
-import { setCache , getCache , generateCacheKey } from "../utils/cache.js"
-import { generateAIOutfit } from "../utils/aiOutfitEngine.js"
+import asyncHandler from "../utils/asyncHandler.js";
+import { api_error } from "../utils/errorHandler.js";
+import BodyProfile from "../models/profile.model.js";
+import ClothingItem from "../models/clothingItem.model.js";
+import { generateShoppingSuggestions } from "../utils/shoppingSuggestion.js";
+import { generateCacheKey, getCache, setCache } from "../utils/cache.js";
 
-export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
-  const userId = req.user.id;
-  const { occasion } = req.query.occasion || req.body.occasion
+/* SerpAPI's free tier is 100 searches a month and one uncached tap spends up
+   to three of them, so a day of cached ideas per user buys more than hourly
+   variety would. */
+const SHOPPING_CACHE_SECONDS = 24 * 60 * 60;
 
-  const cacheKey = generateCacheKey("occasion_sug", userId);
-  const cached = await getCache(cacheKey);
-  if (cached) return res.status(200).json(cached);
-
-  const profile = await BodyProfile.findOne({ user: userId });
-  if (!profile) throw new api_error(404, "create a profile");
-
-  const weather = await getWeather();
-
-  const aiResult = await generateAIOutfit({
-    profile,
-    weather,
-    wardrobe: [],
-    occasion: occasion || "casual daily",
-  });
-
-  let weatherNote = `It's currently ~${weather.temperature}°C in Jaipur`;
-  if (!weather.isDay) weatherNote += " (night time — consider layers)";
-
-  const responseData = {
-    userId,
-    temperature: weather.temperature,
-    weatherNote,
-    occasion: occasion || "casual daily",
-    suggestions: aiResult.outfits,
-    basedOn: aiResult.source || "ai"
-  };
-
-  await awardPoints(userId, 5, 'occasion_sug');
-
-  await setCache(cacheKey, responseData, 1800);
-
+/**
+ * GET /suggestion/get/occasion/suggestions
+ * Returns empty suggestion list for any occasion.
+ */
+export const getOccasionSuggestion = asyncHandler(async (req, res) => {
+  const { occasion = "casual" } = req.query;
   res.status(200).json({
-    responseData,
-    note: "AI-powered occasion suggestion"
+    suggestion: {
+      occasion,
+      outfit: "No suggestions available",
+      note: "Suggestion service placeholder",
+    },
   });
-})
+});
 
-export const getDailyRecommendations = asyncHandeler(async(req,res,next)=>{
-   const userId = req.user.id;
-
-  const cacheKey = generateCacheKey("daily_rec", userId);
-  const cached = await getCache(cacheKey);
-  if (cached) return res.status(200).json(cached);
-
-  const profile = await BodyProfile.findOne({ user: userId });
-  if (!profile) throw new api_error(404, "Create profile");
-
-  const weather = await getWeather();
-
-  const aiResult = await generateAIOutfit({
-    profile,
-    weather,
-    occasion: "daily wear",
-  });
-
-  const responseData = {
-    userId,
-    date: new Date().toLocaleDateString('en-IN'),
-    temperature: weather.temperature,
-    weatherFeel: weather.temperature < 18 ? 'cold' : weather.temperature > 32 ? 'hot' : 'mild',
+/**
+ * GET /suggestion/get/daily/recommendations
+ * Returns a generic daily recommendation.
+ */
+export const getDailyRecommendations = asyncHandler(async (req, res) => {
+  res.status(200).json({
     recommendation: {
-      outfit: aiResult.outfits[0],   // pick best one
-      source: aiResult.source,
-      message: `For ${weather.temperature}°C, try: ${aiResult.outfits[0]}`,
-      weatherSource: "ai"
-    }
+      outfit: "Generic outfit suggestion",
+      note: "Daily recommendation placeholder",
+    },
+  });
+});
+
+/**
+ * GET /suggestion/get/shopping
+ * What to buy next: AI-picked gaps in the wardrobe, each with real products.
+ * Pass ?refresh=1 to spend fresh SerpAPI searches instead of the cached ideas.
+ */
+export const getShoppingSuggestions = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const refresh = req.query.refresh === "1" || req.query.refresh === "true";
+  const cacheKey = generateCacheKey("shopping-suggestions", userId);
+
+  if (!refresh) {
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json({ ...cached, cached: true });
+  }
+
+  const profile = await BodyProfile.findOne({ user: userId });
+  if (!profile) {
+    return res.status(200).json({
+      message: "Add your body profile so the stylist knows what to shop for",
+      suggestions: [],
+    });
+  }
+
+  const items = await ClothingItem.find({ userId }).select("name color category");
+
+  const { suggestions } = await generateShoppingSuggestions({
+    profile,
+    wardrobeItems: items,
+  });
+
+  /* Measurements sharpen the picks but are not required — say so rather than
+     refusing to shop for someone who skipped that part. */
+  const hasMeasurements = Boolean(profile.heightCm && profile.weightKg && profile.age);
+
+  const message = suggestions.length
+    ? hasMeasurements
+      ? null
+      : "Add your body profile for picks tuned to you"
+    : "No shopping ideas right now — give it a moment and try again";
+
+  const responseData = {
+    suggestions,
+    generatedAt: new Date().toISOString(),
+    cached: false,
+    ...(message ? { message } : {}),
   };
 
-  await awardPoints(userId, 5, 'daily_recommendation');
+  /* An empty answer is worth retrying, so only a real result is remembered. */
+  if (suggestions.length) {
+    await setCache(cacheKey, responseData, SHOPPING_CACHE_SECONDS);
+  }
 
-  await setCache(cacheKey, responseData, 1800);
-
-  res.status(200).json({
-    responseData,
-    note: "AI-powered recommendation"
-  });
-})
-
-export const getShoppingSuggestions = asyncHandeler(async (req, res) => {
-    const userId  = req.user.id;
-
-    if (!userId) {
-        throw new api_error(400, "userId is required")
-    }
-
-    const profile = await BodyProfile.findOne({ user: userId });
-    if (!profile) {
-        throw new api_error(404, "Create your body profile first")
-    }
-
-    const wardrobeItems = await ClothingItem.find({ userId }).sort({ addedAt: -1 });
-
-    const shopping = generateShoppingSuggestions(profile, wardrobeItems);
-
-    res.status(200).json({
-        userId,
-        wardrobeSize: wardrobeItems.length,
-        ...shopping
-    });
-  })
+  res.status(200).json(responseData);
+});

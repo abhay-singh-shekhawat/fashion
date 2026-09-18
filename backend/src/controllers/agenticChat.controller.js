@@ -32,8 +32,8 @@ const withTimeout = (promise, ms, label) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-flash-latest",
+const buildModel = (alias) => genAI.getGenerativeModel({
+  model: alias,
   tools: [{ functionDeclarations: Object.values(tools).map(({ name, description, parameters }) => ({ name, description, parameters })) }],
   systemInstruction: `You are StyleSense, a friendly, expert, and highly fashionable AI personal stylist.
 You help users with outfit suggestions, wardrobe management, color matching, occasion-based styling, shopping advice, and style progress tracking.
@@ -56,6 +56,69 @@ Tool error handling:
 
 Always respond in a natural, conversational way after using tools.`
 });
+
+/* Free-tier keys are capped per model (~20 requests/day), so the alias that just
+   refused us is usually the only one out of budget while the next still has room. */
+const MODEL_CHAIN = ["gemini-flash-latest", "gemini-flash-lite-latest"];
+
+/* Built on first use, so the fallback carries exactly the same tools and persona
+   as the primary and an alias nobody needs is never constructed. */
+const modelCache = new Map();
+const modelFor = (alias) => {
+  if (!modelCache.has(alias)) modelCache.set(alias, buildModel(alias));
+  return modelCache.get(alias);
+};
+
+/* Every refused call carries the parsed response body, which is where the quota
+   verdict lives. A per-day cap never clears inside one request, so waiting it out
+   would only stall the reply — the next alias is the only useful move. */
+const isDailyQuotaError = (error) =>
+  Boolean(
+    error?.errorDetails?.some((detail) =>
+      (detail?.violations ?? []).some((violation) =>
+        /PerDay/i.test(violation?.quotaId ?? violation?.quotaMetric ?? "")
+      )
+    )
+  );
+
+/**
+ * Ask each alias until one answers, and report which one did — the completion
+ * event used to credit the primary model no matter who actually replied.
+ */
+const generateWithFallback = async (contents) => {
+  let lastError;
+
+  for (const alias of MODEL_CHAIN) {
+    try {
+      const result = await withTimeout(
+        modelFor(alias).generateContent({ contents }),
+        MODEL_CALL_TIMEOUT_MS,
+        'Gemini model call'
+      );
+      return { result, model: alias };
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `[Gemini] ${alias} failed${isDailyQuotaError(error) ? ' (daily quota)' : ''}: ${error?.message || error}`
+      );
+    }
+  }
+
+  throw lastError;
+};
+
+/**
+ * Gemini's FunctionResponse.response must be a Struct, i.e. an object. A tool
+ * that hands back a bare array — shopping suggestions come back as a list —
+ * serialises as a JSON array and the follow-up turn is rejected with "Proto
+ * field is not repeating, cannot start list", which kills the whole reply.
+ * Anything that isn't a plain object gets wrapped, so a list survives as the
+ * value inside the wrapper.
+ */
+const asFunctionResponse = (result) => {
+  if (result && typeof result === 'object' && !Array.isArray(result)) return result;
+  return { result: result ?? null };
+};
 
 // Conversation history store. We keep a bounded message list per user and timestamps to enable TTL cleanup.
 const conversationHistory = new Map();
@@ -139,7 +202,11 @@ const extractJsonFromText = (text) => {
 };
 
 export const agenticChat = asyncHandeler(async(req,res,next) => {
-    const { userId, message } = req.body;
+    /* Identity comes from the verified token (authMiddleware), never from the
+       body: the app posts multipart/form-data with only `message` (+ `image`),
+       so a body-based userId made every stylist message a 400. */
+    const userId = req.user?.id;
+    const { message } = req.body;
     const mimetype = req.file?.mimetype;
     const buffer = req.file?.buffer?.toString('base64');
     const imageUrl = buffer ? `data:${mimetype};base64,${buffer}` : null;
@@ -220,6 +287,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       let finalReply = "";
       let chunkIndex = 0;
       let result;
+      let answeredModel = null;
 
       // Loop: call model, handle function calls, repeat
       const MAX_TOOL_ITERATIONS = 6;
@@ -236,18 +304,21 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         }
 
         try {
-          result = await withTimeout(
-            model.generateContent({ contents }),
-            MODEL_CALL_TIMEOUT_MS,
-            'Gemini model call'
-          );
+          const answered = await generateWithFallback(contents);
+          result = answered.result;
+          answeredModel = answered.model;
         } catch (modelErr) {
           console.error(`[Chat] Model call failed:`, modelErr?.message || modelErr);
+          /* An exhausted daily quota is the one failure the user cannot retry
+             their way out of, so it gets its own honest message. */
+          const quotaExhausted = isDailyQuotaError(modelErr);
           shortCircuit = {
-            message: modelErr?.code === 'TIMEOUT'
-              ? "The AI service is taking too long. Please try again."
-              : "I'm having trouble reaching my AI brain right now. Please try again shortly.",
-            reason: 'model_error'
+            message: quotaExhausted
+              ? "I've used up today's AI request quota. It resets when the day rolls over — try me again then."
+              : modelErr?.code === 'TIMEOUT'
+                ? "The AI service is taking too long. Please try again."
+                : "I'm having trouble reaching my AI brain right now. Please try again shortly.",
+            reason: quotaExhausted ? 'quota_exceeded' : 'model_error'
           };
           break;
         }
@@ -336,7 +407,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         contents.push({ role: 'model', parts: modelParts });
         contents.push({
           role: 'user',
-          parts: [{ functionResponse: { name, response: typeof toolResult === "object" && toolResult ? toolResult : { result: String(toolResult) } } }],
+          parts: [{ functionResponse: { name, response: asFunctionResponse(toolResult) } }],
         });
       }
 
@@ -366,7 +437,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       // Emit typing stop and completion
       await emitChatTyping(userId, false);
       await emitChatResponseComplete(userId, finalReply, {
-        model: "gemini-flash-latest",
+        model: answeredModel ?? MODEL_CHAIN[0],
         duration: Date.now() - startTime
       });
 
@@ -378,7 +449,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
     }
   } catch (error) {
       console.error("[Chat] Error:", error?.message || error);
-      try { await emitChatError(req.body?.userId || req.body?.userId, error?.message || error); } catch(e){}
+      try { await emitChatError(userId, error?.message || error); } catch(e){}
       throw error;
     }
 

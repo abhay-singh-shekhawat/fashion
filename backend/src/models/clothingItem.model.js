@@ -50,9 +50,14 @@ const clothingItemSchema = new mongoose.Schema({
     },
 },{timestamps : true});
 
-// Compound unique index to prevent duplicate inserts for same user + imageHash
-// sparse: true allows documents without imageHash (if any legacy doc)
-clothingItemSchema.index({ userId: 1, imageHash: 1 }, { unique: true, sparse: true });
+/* Compound unique index to prevent duplicate inserts for same user + imageHash.
+   `partialFilterExpression`, not `sparse`: a sparse compound index still indexes
+   a document whose userId is set and imageHash is missing — as null — so every
+   hashless item collided with the first one ({ userId, imageHash: null }). */
+clothingItemSchema.index(
+  { userId: 1, imageHash: 1 },
+  { unique: true, partialFilterExpression: { imageHash: { $type: 'string' } } }
+);
 
 const ClothingItem = mongoose.model('ClothingItem', clothingItemSchema);
 

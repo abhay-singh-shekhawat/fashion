@@ -8,7 +8,6 @@ import { scanQueue } from "../configs/queue.js"
 import {
   emitScanStart,
   emitScanProgress,
-  emitScanComplete,
   emitScanError,
 } from "../services/socketService.js"
 
@@ -93,12 +92,10 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
         // Award points for scan uploading
         await awardPoints(userId, 8, 'scan_uploaded');
 
-        // Emit completion
-        await emitScanComplete(userId, {
-            jobId: publicId,
-            uploadedImageUrl: uploadResult.secure_url,
-            message: "Scan job queued successfully. Processing in background..."
-        });
+        /* No emitScanComplete here: the job has only been queued at this point.
+           Reporting completion now told the app "done, 0 items" while the worker
+           was still (or never) running — the worker emits the real
+           scan:complete / scan:items:detected / scan:error events instead. */
 
         res.status(200).json({
             success: true,

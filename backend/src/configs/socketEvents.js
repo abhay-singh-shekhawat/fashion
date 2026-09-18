@@ -48,6 +48,15 @@ export const SOCKET_EVENTS = {
     ERROR: "rating:error",
   },
 
+  SKIN_TONE: {
+    START: "skintone:start",
+    QUEUED: "skintone:queued",
+    PROCESSING: "skintone:processing",
+    PROGRESS: "skintone:progress",
+    COMPLETE: "skintone:complete",
+    ERROR: "skintone:error",
+  },
+
   NOTIFICATION: {
     NEW: "notification:new",
     ACHIEVEMENT: "notification:achievement",

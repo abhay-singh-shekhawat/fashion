@@ -4,7 +4,10 @@ const defaultTtl = 300
 
 export const setCache = async(key,data,ttl=defaultTtl)=>{
     try {
-        await redis.set(key,JSON.stringify(data),`EX`,ttl)
+        /* node-redis v4 wants the expiry as an options object — the old
+           `set(key, value, 'EX', ttl)` form was silently ignored, so every
+           entry was written without a TTL and stayed forever. */
+        await redis.set(key,JSON.stringify(data),{ EX: ttl })
     } catch (error) {
         console.log("Error in setcache",error)
     }

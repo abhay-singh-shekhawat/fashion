@@ -55,21 +55,43 @@ export const initializeSocket = (httpServer) => {
 
     console.log(`[Socket] User connected: ${userId} | Socket: ${socketId}`);
 
-    connectedUsers.set(userId, {
-      socketId: socketId,
-      connectedAt: Date.now(),
-      isProcessing: false,
-    });
+    /* One user can hold several sockets at once (React StrictMode mounts the
+       connect effect twice, plus extra tabs and reconnect races). Track them
+       all — replacing the entry wholesale used to leave the user marked
+       offline as soon as any stale socket said goodbye. */
+    const existing = connectedUsers.get(userId);
+    if (existing) {
+      existing.socketIds.add(socketId);
+    } else {
+      connectedUsers.set(userId, {
+        socketIds: new Set([socketId]),
+        connectedAt: Date.now(),
+        isProcessing: false,
+      });
+    }
 
     socket.join(`user:${userId}`);
     socket.join("notifications");
 
-    console.log(`[Socket] Connected users count: ${connectedUsers.size}`);
+    console.log(
+      `[Socket] User ${userId} now has ${connectedUsers.get(userId).socketIds.size} socket(s) | Total users: ${connectedUsers.size}`,
+    );
 
     // Disconnect handler
     socket.on("disconnect", (reason) => {
-      console.log(`[Socket] User disconnected: ${userId} | Reason: ${reason}`);
-      connectedUsers.delete(userId);
+      console.log(`[Socket] User disconnected: ${userId} | Socket: ${socketId} | Reason: ${reason}`);
+
+      const user = connectedUsers.get(userId);
+      if (!user) return;
+
+      user.socketIds.delete(socketId);
+      /* Only once the LAST socket is gone is the user actually offline,
+         otherwise every later event (scan:complete, chat chunks, ...) gets
+         dropped by the isUserOnline check. */
+      if (user.socketIds.size === 0) {
+        connectedUsers.delete(userId);
+      }
+
       console.log(`[Socket] Connected users count: ${connectedUsers.size}`);
     });
 
@@ -105,7 +127,16 @@ export const initializeSocket = (httpServer) => {
 
 const getConnectedUsers = () => connectedUsers;
 
-const getUserSocket = (userId) => connectedUsers.get(userId) || null;
+/** A user may have several sockets; report the first one as their primary. */
+const getUserSocket = (userId) => {
+  const user = connectedUsers.get(userId);
+  if (!user || user.socketIds.size === 0) return null;
+  return {
+    socketId: [...user.socketIds][0],
+    connectedAt: user.connectedAt,
+    isProcessing: user.isProcessing,
+  };
+};
 
 const isUserOnline = (userId) => connectedUsers.has(userId);
 

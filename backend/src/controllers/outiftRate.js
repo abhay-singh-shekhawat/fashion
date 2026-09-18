@@ -1,17 +1,22 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import { api_error } from "../utils/errorHandler.js";
 import { scanQueuelite } from "../configs/queue.js";
+import cloudinary from "../configs/cloudinary.js";
 import getWeather from "../utils/getWeather.js";
-import { generateOutfitTips, generateQuickOutfitTips } from "../utils/generateOutfitTips.js";
+import { generateOutfitTips, generateQuickOutfitTips, generateOutfitFeedback } from "../utils/generateOutfitTips.js";
 import { awardPoints } from "./progress.controller.js";
 import User from "../models/user.model.js";
 import BodyProfile from "../models/profile.model.js";
 import ClothingItem from "../models/clothingItem.model.js";
+import OutfitRating from "../models/outfitRating.model.js";
 import {
   calculateOutfitScore,
   estimateWeatherSuitability,
-  estimateSkinToneFit
+  estimateSkinToneFit,
+  estimateFormalityMatch,
+  deriveOutfitFormality
 } from "../utils/outfitScorer.js";
+import { rateOutfitHarmony } from "../utils/colorHarmony.js";
 import crypto from "crypto";
 import {
   emitRatingStart,
@@ -54,13 +59,21 @@ const waitForScanJob = async (jobId, timeout = 60000) => {
 /**
  * POST /api/outfit/rate
  * Scan outfit image and get detailed feedback + improvement tips
+ * Accepts either an uploaded image (multipart `image`) or a hosted `imageUrl`.
  */
 export const rateOutfitController = asyncHandler(async (req, res) => {
-  const { imageUrl, occasion = "casual", detailedFeedback = false } = req.body;
+  const { occasion = "casual", detailedFeedback = false } = req.body;
   const userId = req.user.id;
+  const file = req.file;
 
-  if (!imageUrl) {
-    throw new api_error(400, "imageUrl is required");
+  /* Multipart text fields arrive as strings, so the toggle ships "true"/"false". */
+  const isDetailed =
+    detailedFeedback === true || detailedFeedback === "true" || detailedFeedback === "1";
+
+  let imageUrl = typeof req.body.imageUrl === "string" ? req.body.imageUrl.trim() : "";
+
+  if (!file && !imageUrl) {
+    throw new api_error(400, "Upload an image or provide an imageUrl");
   }
 
   try {
@@ -73,23 +86,56 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
       throw new api_error(404, "User not found");
     }
 
+    let imageBuffer;
+    const uploadSeed = `${userId}-${Date.now()}`;
+    /* Stays null for pasted links: only an upload we made has an asset to
+       clean up later, and the rating history relies on that distinction. */
+    let publicId = null;
+
+    if (file) {
+      /* The queue worker needs a URL it can hand to Gemini, so uploaded files
+         go through the same Cloudinary path the scanner uses. */
+      const uploadResult = await cloudinary.uploader.upload(
+        `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+        {
+          folder: "fashion/ratings",
+          public_id: `rate_${uploadSeed}`,
+          overwrite: false,
+        }
+      );
+      imageUrl = uploadResult.secure_url;
+      publicId = uploadResult.public_id;
+      imageBuffer = file.buffer;
+    } else {
+      const imageResponse = await fetch(imageUrl);
+      if (!imageResponse.ok) {
+        throw new api_error(400, "Could not download that image link");
+      }
+      imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    }
+
     // Hash image for duplicate detection
-    const imageBuffer = await fetch(imageUrl).then(r => r.arrayBuffer());
     const imageHash = crypto
       .createHash("sha256")
-      .update(Buffer.from(imageBuffer))
+      .update(imageBuffer)
       .digest("hex");
 
-    const publicId = `${userId}-${Date.now()}`;
-
     // ========== SCAN IMAGE (ASYNC) ==========
+    /* Without these options the job is created with attempts: 0, so a single
+       transient Gemini 503 killed the rating outright. */
     const job = await scanQueuelite.add("scan", {
       userId,
       imageUrl,
       publicId,
       imageHash,
       occasion,
-      detailedFeedback
+      detailedFeedback: isDetailed,
+      jobType: "rating"
+    }, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: false
     });
 
     console.log(`[Outfit Rating] Scan job queued: ${job.id}`);
@@ -344,21 +390,33 @@ export const rateSavedOutfitController = asyncHandler(async (req, res) => {
   }
 
   // Score the outfit
-  const colorHarmonyEstimate = Math.min(100, 50 + (items.length * 15));
-  const formalityMap = {
-    casual: 12,
-    smart_casual: 18,
-    formal: 22,
-    party: 20,
-    traditional: 18
+  /* Saved pieces carry their own colour and formality, so both dimensions are
+     judged from the combination rather than estimated from how many items the
+     user picked. */
+  const harmony = rateOutfitHarmony(items.map(i => i.color));
+  const formality = estimateFormalityMatch({
+    occasion,
+    formalityLevel: deriveOutfitFormality(items)
+  });
+
+  const colorHarmonyForUi = {
+    colors: harmony.colors,
+    pairs: harmony.pairs,
+    note: harmony.note
   };
-  const formalityMatch = formalityMap[occasion] || 15;
+
+  const formalityForUi = {
+    occasion,
+    detected: formality.detected,
+    wanted: formality.wanted,
+    note: formality.note
+  };
 
   const outfitScore = calculateOutfitScore({
-    colorHarmonyScore: colorHarmonyEstimate,
+    colorHarmonyScore: harmony.score,
     skinToneFit: skinToneScore,
     weatherSuitability: weatherScore,
-    formalityMatch,
+    formalityMatch: formality.score,
     isScanned: false,
     scanConfidence: 0.8
   });
@@ -372,25 +430,26 @@ export const rateSavedOutfitController = asyncHandler(async (req, res) => {
       confidence: 0.95
     }));
 
-    const tipsResponse = detailedFeedback
-      ? await generateOutfitTips({
-          outfitScore,
-          detectedItems: detectedItemsFormat,
-          weather: weatherData,
-          userProfile: bodyProfile || {},
-          occasion
-        })
-      : await generateQuickOutfitTips({
-          outfitScore,
-          detectedItems: detectedItemsFormat,
-          weather: weatherData,
-          userProfile: bodyProfile || {},
-          occasion
-        });
+    const feedback = await generateOutfitFeedback({
+      outfitScore,
+      detectedItems: detectedItemsFormat,
+      weather: { ...weatherData, band: tempCategory },
+      colorHarmony: colorHarmonyForUi,
+      formality: formalityForUi,
+      userProfile: bodyProfile || {},
+      occasion,
+      detailed: detailedFeedback
+    });
 
     improvementTips = {
-      tips: tipsResponse.tips,
-      mode: detailedFeedback ? "detailed" : "quick"
+      tips: feedback.paragraph ?? feedback.quickWins ?? [],
+      feedback: {
+        headline: feedback.headline,
+        sections: feedback.sections,
+        quickWins: feedback.quickWins
+      },
+      mode: feedback.mode,
+      model: feedback.model
     };
   } catch (tipsError) {
     console.warn("[Outfit Rating] Tips generation failed:", tipsError.message);
@@ -414,16 +473,33 @@ export const rateSavedOutfitController = asyncHandler(async (req, res) => {
         id: i._id,
         name: i.name,
         color: i.color,
-        category: i.category
+        category: i.category,
+        imageUrl: i.imageUrl
       })),
       colors: items.map(i => i.color)
     },
-    weather: weatherData,
+    weather: { ...weatherData, band: tempCategory },
+    colorHarmony: colorHarmonyForUi,
+    formality: formalityForUi,
     improvementTips: improvementTips || null,
     metadata: {
       ratedAt: new Date().toISOString()
     }
   };
+
+  /* Best-effort: a combination the user just scored should still come back
+     even if remembering it fails. */
+  try {
+    const stored = await OutfitRating.record({
+      userId,
+      mode: 'closet',
+      occasion,
+      result: response
+    });
+    response.metadata.ratingId = stored._id;
+  } catch (historyError) {
+    console.warn("[Outfit Rating] History save failed:", historyError.message);
+  }
 
   return res.status(200).json({
     success: true,

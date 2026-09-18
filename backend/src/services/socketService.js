@@ -178,21 +178,28 @@ export const emitScanQueued = async (userId, jobId, position = 1) => {
  * WHEN: Worker processes scan (periodically)
  * WHY: User sees progress instead of blank loading screen
  * 
- * EXAMPLE:
- * 10% "Uploading image..."
- * 25% "Analyzing colors..."
- * 50% "Detecting patterns..."
- * 75% "Matching to wardrobe..."
- * 100% "Complete!"
+ * Accepts either emitScanProgress(userId, 50, "message") or the object form
+ * emitScanProgress(userId, { status, message, progress }) used by the workers.
+ * Passing an object to the numeric parameter used to ship `percent: NaN`.
  * 
  * @param {string} userId - User being scanned
- * @param {number} percent - 0-100 progress
+ * @param {number|object} percentOrUpdate - 0-100, or { status, message, progress }
  * @param {string} message - Human-readable status
  */
-export const emitScanProgress = async (userId, percent, message) => {
+export const emitScanProgress = async (userId, percentOrUpdate, message) => {
+  const update = percentOrUpdate && typeof percentOrUpdate === 'object'
+    ? percentOrUpdate
+    : { percent: percentOrUpdate, message };
+
+  const raw = update.percent ?? update.progress;
+  const num = Number(raw);
+  const percent = Number.isFinite(num) ? Math.min(100, Math.max(0, num)) : null;
+
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.PROGRESS, {
-    percent: Math.min(100, Math.max(0, percent)),
-    message,
+    percent,
+    progress: percent,
+    status: update.status,
+    message: update.message ?? message,
   });
 };
 
@@ -225,6 +232,8 @@ export const emitScanItemsDetected = async (userId, items) => {
 export const emitScanComplete = async (userId, scanResult) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.COMPLETE, {
     jobId: scanResult?.jobId,
+    itemsAdded: scanResult?.itemsAdded,
+    message: scanResult?.message,
     items: asArray(scanResult?.items),
     confidence: scanResult?.confidence,
     duration: scanResult?.duration,
@@ -243,6 +252,91 @@ export const emitScanError = async (userId, error) => {
   return await safeEmit(userId, SOCKET_EVENTS.SCAN.ERROR, {
     error: error?.message || error,
     code: error?.code || "SCAN_ERROR",
+  });
+};
+
+/**
+ * ============================================
+ * SKIN TONE EVENTS
+ * ============================================
+ */
+
+/**
+ * Emit when skin tone scan starts
+ * 
+ * WHEN: skinTone.controller.js receives portrait image
+ * 
+ * @param {string} userId - User uploading image
+ * @param {object} metadata - { fileName, fileSize, etc }
+ */
+export const emitSkinToneStart = async (userId, metadata = {}) => {
+  return await safeEmit(userId, SOCKET_EVENTS.SKIN_TONE.START, {
+    ...metadata,
+    startTime: nowIso(),
+  });
+};
+
+/**
+ * Emit when skin tone scan job is queued
+ * 
+ * WHEN: Job added to Bull Queue
+ * 
+ * @param {string} userId - User's scan
+ * @param {string} jobId - Queue job ID
+ */
+export const emitSkinToneQueued = async (userId, jobId) => {
+  return await safeEmit(userId, SOCKET_EVENTS.SKIN_TONE.QUEUED, {
+    jobId,
+    estimatedWait: 3,
+  });
+};
+
+/**
+ * Emit skin tone scan progress updates
+ * 
+ * WHEN: Worker processes skin tone scan (periodically)
+ * 
+ * @param {string} userId - User being scanned
+ * @param {number} percent - 0-100 progress
+ * @param {string} message - Human-readable status
+ */
+export const emitSkinToneProgress = async (userId, percent, message) => {
+  return await safeEmit(userId, SOCKET_EVENTS.SKIN_TONE.PROGRESS, {
+    percent: Math.min(100, Math.max(0, percent)),
+    message,
+  });
+};
+
+/**
+ * Emit when skin tone scan is complete
+ * 
+ * WHEN: Worker finishes processing and updates profile
+ * 
+ * @param {string} userId - User's scan
+ * @param {object} result - { skinTone, confidence, description, updatedAt }
+ */
+export const emitSkinToneComplete = async (userId, result) => {
+  return await safeEmit(userId, SOCKET_EVENTS.SKIN_TONE.COMPLETE, {
+    success: result?.success,
+    skinTone: result?.skinTone,
+    confidence: result?.confidence,
+    description: result?.description,
+    updatedAt: result?.updatedAt,
+  });
+};
+
+/**
+ * Emit skin tone scan error
+ * 
+ * WHEN: Skin tone scan fails
+ * 
+ * @param {string} userId - User's failed scan
+ * @param {string} error - Error message
+ */
+export const emitSkinToneError = async (userId, error) => {
+  return await safeEmit(userId, SOCKET_EVENTS.SKIN_TONE.ERROR, {
+    error: error?.message || error,
+    code: error?.code || "SKIN_TONE_ERROR",
   });
 };
 
@@ -274,13 +368,17 @@ export const emitRatingStart = async (userId, metadata = {}) => {
  * 
  * @param {string} userId - User rating
  * @param {number} score - Weather score (0-100)
- * @param {object} weatherData - { temperature, condition, etc }
+ * @param {object} weatherData - { temperature, feelsLike, condition, isDay, location, band }
  */
 export const emitRatingWeatherDone = async (userId, score, weatherData = {}) => {
   return await safeEmit(userId, SOCKET_EVENTS.RATING.WEATHER_DONE, {
     score,
     temperature: weatherData?.temperature,
+    feelsLike: weatherData?.feelsLike,
     condition: weatherData?.condition,
+    isDay: weatherData?.isDay,
+    location: weatherData?.location,
+    band: weatherData?.band,
   });
 };
 
@@ -378,12 +476,14 @@ export const emitRatingTipsChunk = async (userId, tip, index) => {
  * 
  * @param {string} userId - User rating
  * @param {array} allTips - All improvement tips
+ * @param {object} feedback - Optional structured feedback { headline, sections, quickWins }
  */
-export const emitRatingTipsComplete = async (userId, allTips) => {
+export const emitRatingTipsComplete = async (userId, allTips, feedback = null) => {
   const safeTips = asArray(allTips);
   return await safeEmit(userId, SOCKET_EVENTS.RATING.TIPS_COMPLETE, {
     allTips: safeTips,
     totalTips: safeTips.length,
+    feedback,
   });
 };
 
@@ -573,6 +673,13 @@ export default {
   emitScanItemsDetected,
   emitScanComplete,
   emitScanError,
+
+  // Skin Tone
+  emitSkinToneStart,
+  emitSkinToneQueued,
+  emitSkinToneProgress,
+  emitSkinToneComplete,
+  emitSkinToneError,
 
   // Rating
   emitRatingStart,

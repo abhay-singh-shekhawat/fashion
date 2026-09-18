@@ -40,6 +40,14 @@ import('./src/workers/scanWorker.js').catch(err => {
   console.error('Failed to start scan worker:', err);
 });
 
+import('./src/workers/skinToneWorker.js').catch(err => {
+  console.error('Failed to start skin tone worker:', err);
+});
+
+import('./src/workers/ratingCleanup.worker.js').catch(err => {
+  console.error('Failed to start rating cleanup worker:', err);
+});
+
 connectDB().then(() => {
     console.log("Connected to MongoDB")
     httpServer.listen(PORT, () => {
@@ -76,6 +84,12 @@ app.use("/api/v1/progress",progressRouter)
 
 import outfitRateRouter from "./src/routes/outfitRate.routes.js"
 app.use("/api/v1/outfit",outfitRateRouter)
+
+import skinToneRouter from "./src/routes/skinTone.routes.js"
+app.use("/api/v1/skin-tone",skinToneRouter)
+
+import activityRouter from "./src/routes/activity.routes.js"
+app.use("/api/v1/activity",activityRouter)
 
 // Error handler must be registered after all routes
 app.use(errorHandler)

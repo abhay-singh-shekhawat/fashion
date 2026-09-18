@@ -33,10 +33,22 @@ export const createProfile = asyncHandler(async (req, res, next) => {
   payload.user = new mongoose.Types.ObjectId(userId);
 
   try {
-    // ensure a profile doesn't already exist
+    /* Registering auto-creates an empty profile, so "a profile already exists"
+       is the normal state for every new user — fill that shell in rather than
+       refusing the write the onboarding wizard is trying to make. */
     const existing = await BodyProfile.findOne({ user: payload.user });
+
     if (existing) {
-      return res.status(409).json({ error: 'Profile already exists' });
+      const profile = await BodyProfile.findOneAndUpdate(
+        { user: payload.user },
+        { $set: { ...payload, updatedAt: Date.now() } },
+        { returnDocument: 'after', runValidators: true }
+      );
+
+      return res.status(200).json({
+        message: 'Profile saved successfully',
+        profile
+      });
     }
 
     const profile = new BodyProfile(payload);

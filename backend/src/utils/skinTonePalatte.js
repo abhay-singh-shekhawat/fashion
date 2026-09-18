@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 
 const groq = new Groq({
-  apiKey: process.env.GROK_API_KEY
+  apiKey: process.env.GROQ_API_KEY
 });
 
 export const getRecommendedColors = async (skinTone) => {
@@ -62,9 +62,17 @@ export const getRecommendedColors = async (skinTone) => {
           }`
         }
       ],
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       temperature: 0.65,
-      max_tokens: 300,
+      /* gpt-oss-120b is a reasoning model, and its hidden reasoning tokens are
+         drawn from this same budget. At 300 it routinely spent the entire
+         allowance thinking and emitted no JSON at all, which Groq rejects with
+         json_validate_failed — "max completion tokens reached before generating
+         a valid document". The JSON body itself only needs ~60 tokens; the rest
+         is headroom. reasoning_effort: "low" keeps the thinking short for what
+         is really just a lookup. */
+      max_tokens: 1000,
+      reasoning_effort: "low",
       response_format: { type: "json_object" }
     });
 

@@ -113,6 +113,24 @@ export const calculateOutfitScore = ({
   return { score, message, breakdown };
 };
 
+const WARM_PIECES = [
+  "jacket", "coat", "blazer", "sweater", "hoodie", "sweatshirt", "cardigan",
+  "puffer", "trench", "overcoat", "shawl", "wool", "woolen", "fleece", "thermal"
+];
+
+const LIGHT_PIECES = [
+  "shirt", "tshirt", "tee", "shorts", "tank", "sleeveless", "camisole",
+  "dress", "skirt", "linen", "chiffon", "cotton"
+];
+
+/* Item types arrive as free text from the vision model ("t-shirt", "denim
+   jacket"), so match on word tokens — a plain substring test made
+   "sweatshirt" count as a light "shirt" too. */
+const hasAnyPiece = (items, vocabulary) =>
+  items.some((item) =>
+    item.split(/[^a-z]+/).filter(Boolean).some((word) => vocabulary.includes(word))
+  );
+
 /**
  * Estimate how suitable the outfit is for current weather
  */
@@ -124,20 +142,118 @@ export const estimateWeatherSuitability = (tempFeel, outfitCategories = []) => {
     throw new Error(`tempFeel must be hot, cold, or mild`);
   }
 
+  const items = outfitCategories.map(c => (c || "").toLowerCase()).filter(Boolean);
+  const warmLayer = hasAnyPiece(items, WARM_PIECES);
+  const lightPiece = hasAnyPiece(items, LIGHT_PIECES);
+
   let score = 15;
-  const cats = outfitCategories.map(c => c.toLowerCase());
 
   if (temp === "hot") {
-    if (cats.includes("outerwear")) score -= 10;
-    if (cats.includes("cotton") || cats.includes("linen")) score += 5;
+    if (warmLayer) score -= 10;
+    if (lightPiece) score += 5;
   } else if (temp === "cold") {
-    if (cats.includes("outerwear")) score += 10;
-    else score -= 10;
+    if (warmLayer) score += 10;
+    else if (lightPiece) score -= 10;
+    else score -= 5;
   } else if (temp === "mild") {
     score += 2;
   }
 
   return Math.max(0, Math.min(25, score));
+};
+
+/* Formality sits on one scale so a mismatch reads as distance rather than a
+   lookup table. Party and traditional land between smart casual and business —
+   dressed up, but not interview-formal. */
+const FORMALITY_SCALE = {
+  sporty: 0,
+  casual: 1,
+  smart_casual: 2,
+  party: 2.5,
+  traditional: 2.5,
+  business: 3,
+  formal: 3
+};
+
+/* What each occasion will accept. An occasion can be happy with more than one
+   level (office takes smart casual or formal), so each is scored against the
+   closest of them rather than a single middle-of-the-road target. */
+const OCCASION_FORMALITY = {
+  casual: ["casual"],
+  daily: ["casual", "smart_casual"],
+  office: ["smart_casual", "formal"],
+  interview: ["formal"],
+  party: ["party"],
+  gym: ["sporty", "casual"],
+  traditional: ["traditional"],
+  date: ["smart_casual"]
+};
+
+/* Points lost per step away from what the occasion asked for. */
+const FORMALITY_STEP = 8;
+
+const readableLevel = (level) => String(level ?? "").replace(/_/g, " ");
+
+/**
+ * Score how well the outfit's formality matches the occasion the user picked.
+ * A formal suit is 25/25 for an interview and near zero for the gym, which a
+ * lookup keyed only on the outfit's own formality could never express.
+ * Returns { score: 0-25, occasion, detected, wanted, note }
+ */
+export const estimateFormalityMatch = ({ occasion = "casual", formalityLevel } = {}) => {
+  const wanted = OCCASION_FORMALITY[occasion] ?? OCCASION_FORMALITY.casual;
+  const targets = wanted.map((level) => FORMALITY_SCALE[level]).filter((step) => step !== undefined);
+  const detected = String(formalityLevel ?? "").toLowerCase().trim();
+  const detectedStep = FORMALITY_SCALE[detected];
+
+  /* The vision model sometimes returns nothing usable — say so instead of
+     inventing a formality and scoring the outfit against it. */
+  if (detectedStep === undefined || !targets.length) {
+    return {
+      score: 15,
+      occasion,
+      detected: null,
+      wanted,
+      note: `Which formality these pieces read as isn't clear — ${occasion} wants ${wanted.map(readableLevel).join(" or ")}`
+    };
+  }
+
+  const distance = Math.min(...targets.map((target) => Math.abs(detectedStep - target)));
+  const score = Math.max(0, Math.min(25, Math.round(25 - distance * FORMALITY_STEP)));
+
+  const note = distance === 0
+    ? `Reads ${readableLevel(detected)} — exactly what ${occasion} asks for`
+    : `Reads ${readableLevel(detected)} — ${occasion} wants ${wanted.map(readableLevel).join(" or ")}`;
+
+  return { score, occasion, detected, wanted, note };
+};
+
+/**
+ * Work out the formality of a saved closet combination from the pieces, since
+ * nothing has looked at the outfit as a whole. Most common level wins; ties go
+ * to the dressier one.
+ */
+export const deriveOutfitFormality = (items = []) => {
+  const counts = new Map();
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const level = String(item?.formality ?? "").toLowerCase().trim();
+    if (FORMALITY_SCALE[level] === undefined) return;
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+  });
+
+  let winner = null;
+  counts.forEach((count, level) => {
+    if (
+      !winner ||
+      count > winner.count ||
+      (count === winner.count && FORMALITY_SCALE[level] > FORMALITY_SCALE[winner.level])
+    ) {
+      winner = { level, count };
+    }
+  });
+
+  return winner?.level ?? null;
 };
 
 /**

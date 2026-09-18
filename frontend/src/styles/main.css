@@ -1,0 +1,277 @@
+@import 'tailwindcss';
+@import 'konsta/react/theme.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Konsta brand colours — the `--color-brand-` prefix is mandatory.
+     These generate Tailwind utilities (bg-brand-lime) AND the
+     `k-color-brand-lime` class used to theme Konsta components.
+     Violet stays primary: the reference uses violet for surfaces and
+     lime only as a sub-2%-of-screen accent. */
+  --color-brand-primary: #a855f7;
+  --color-brand-lime: #c6ff3d;
+  --color-brand-cyan: #22d3ee;
+  --color-brand-pink: #ff4d8d;
+  --color-brand-amber: #ffb020;
+  --color-brand-error: #ff3b5c;
+
+  /* Indigo is the reference's hero-gradient partner. Used once per screen,
+     on the Today fit card, and nowhere else. */
+  --color-brand-indigo: #5b4ccd;
+
+  /* Obsidian surface ramp — true black base, cool grey surfaces.
+     Measured off the reference: bg #000000, cards #161a1c–#19191c. */
+  --color-ink-950: #000000;
+  --color-ink-900: #141618;
+  --color-ink-800: #1d2023;
+  --color-ink-700: #2a2e32;
+
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+
+  /* Radius scale — cards and heroes step deliberately instead of by accident. */
+  --radius-card: 1.25rem;
+  --radius-hero: 1.75rem;
+  --radius-blob: 1.75rem;
+
+  /* Easing */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Motion tokens. The pre-existing `animate-[shimmer_1s_…]` style arbitrary
+     values in the pages keep working; these just give the common cases a name. */
+  --animate-fade-up: fade-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 260ms ease-out both;
+  --animate-scale-in: scale-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-toast-in: toast-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-shimmer: shimmer 1.1s ease-in-out infinite;
+  /* Runs a highlight across a button, then rests — see the Stylist action. */
+  --animate-sheen: sheen 3.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@utility glass {
+  @apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md;
+}
+
+@utility glass-strong {
+  @apply rounded-3xl border border-white/10 bg-white/[0.06] backdrop-blur-xl;
+}
+
+@utility pill {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase;
+}
+
+@utility press {
+  @apply transition-transform duration-150 active:scale-95;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility spring {
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Consistent page gutter. Every screen used to hardcode `px-4 pt-2 pb-6`,
+   which cannot adapt; this is the single place the responsive rhythm lives. */
+@utility page-pad {
+  padding: 0.5rem 1rem 1.5rem;
+
+  @media (width >= 48rem) {
+    padding: 0.75rem 1.5rem 2rem;
+  }
+
+  @media (width >= 64rem) {
+    padding: 1.5rem 2rem 2.5rem;
+  }
+}
+
+/* Vertical rhythm between the top-level blocks of a page. */
+@utility page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  @media (width >= 64rem) {
+    gap: 1.5rem;
+  }
+}
+
+/* Hover is a desktop-only affordance — gate it on pointer capability so touch
+   devices never get a stuck hover state. */
+@utility hover-lift {
+  @media (hover: hover) and (pointer: fine) {
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 200ms ease-out,
+      background-color 200ms ease-out;
+
+    &:hover {
+      transform: translateY(-2px);
+      border-color: rgb(255 255 255 / 0.16);
+    }
+  }
+}
+
+/* Konsta's Sheet is a bottom sheet by construction: `fixed`, `top-full`, and it
+   slides up with `-translate-y-full` (which sets the `translate` property, not
+   `transform` — hence the override below). At lg+ we reposition the same
+   element into a centred modal. Written as plain CSS rather than utilities
+   because these values have to win outright against Konsta's own classes, and
+   an unlayered rule does so regardless of source order. */
+@media (width >= 64rem) {
+  .sheet-desktop {
+    top: 50% !important;
+    left: 50% !important;
+    right: auto !important;
+    width: 100% !important;
+    max-width: 32rem !important;
+    max-height: 85vh;
+    overflow-y: auto;
+    translate: -50% -50% !important;
+    border-radius: 1.5rem !important;
+    transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sheet-desktop[data-state='closed'] {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* Entrance + scroll reveal. One mechanism covers both: an element already in
+   view when it mounts reveals straight away (that reads as the load animation),
+   and one below the fold reveals when it scrolls in. The `reveal-in` class is
+   added by src/components/Reveal.jsx via IntersectionObserver. Unlayered so it
+   wins over Tailwind's opacity/transform utilities on the same node. */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Without this the global reduced-motion rule would shorten the transition but
+   leave anything the observer never reaches at opacity 0. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Konsta navbars are `sticky` by construction (`k-navbar … top-0 sticky`), which
+   pins the avatar and the page title to the top while the content scrolls under
+   them. This design wants the header to scroll away with the page instead, so
+   it is overridden outright. Written unlayered (and with two classes of
+   specificity) because Tailwind emits `.sticky` in its utilities layer and a
+   plain `static` utility would lose to it. */
+.k-navbar.navbar-inline {
+  position: static;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ink-950 text-white antialiased;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* A narrow highlight that crosses the element early in the cycle and then
+   rests off-screen, so it draws the eye without constantly moving. */
+@keyframes sheen {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  55% {
+    transform: translateX(280%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(280%) skewX(-18deg);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Respect the OS setting. Animations collapse to a single near-instant frame
+   rather than being removed, so nothing that depends on an animation's end
+   state is left invisible. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

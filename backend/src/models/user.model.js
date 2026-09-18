@@ -18,6 +18,14 @@ const userSchema = new mongoose.Schema({
     refreshToken: {
         type: [String],
         default: []
+    },
+    /* Password reset: only the hash of the emailed token is stored, and it
+       stops being valid an hour after it was issued. */
+    resetPasswordToken: {
+        type: String
+    },
+    resetPasswordExpires: {
+        type: Date
     }
 }, { timestamps: true });
 

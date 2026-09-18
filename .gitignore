@@ -7,7 +7,6 @@ node_modules/
 .env
 .env.local
 .env.*.local
-.env.example
 
 # Build outputs
 dist/
@@ -23,6 +22,7 @@ build/
 
 # Uploads & Media
 uploads/
+!backend/src/utils/uploads/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -31,6 +31,7 @@ yarn-error.log*
 # IDE & Editor files
 .vscode/
 .idea/
+.commandcode/
 *.swp
 *.swo
 *~
