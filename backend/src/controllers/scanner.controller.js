@@ -2,7 +2,7 @@ import BodyProfile from "../models/profile.model.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import { awardPoints } from "./progress.controller.js"
-import cloudinary from "../configs/cloudinary.js"
+import { uploadImage } from "../utils/uploads/cloudinaryUpload.js"
 import crypto from "crypto"
 import { scanQueue } from "../configs/queue.js"
 import {
@@ -48,14 +48,10 @@ export const scanOutfit = asyncHandeler(async(req,res,next)=>{
         });
 
         const publicId = `scan_${userId}_${Date.now()}`
-        const uploadResult = await cloudinary.uploader.upload(
-          `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
-          {
-            folder: 'fashion/scan',
-            public_id: publicId,
-            overwrite: false,
-          }
-        );
+        const uploadResult = await uploadImage(req.file, {
+          folder: 'fashion/scan',
+          publicId
+        });
 
         // Emit progress
         await emitScanProgress(userId, {

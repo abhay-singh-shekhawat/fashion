@@ -2,7 +2,7 @@ import {getDailyRecommendations, getOccasionSuggestion, getShoppingSuggestions} 
 import {getWardrobe} from "../controllers/wardrobe.controller.js"
 import {getProgress} from "../controllers/progress.controller.js"
 import scanWorker from "../workers/scanWorkerLite.js"
-import cloudinary from "../configs/cloudinary.js"
+import { uploadImage } from "../utils/uploads/cloudinaryUpload.js"
 import { scanQueuelite } from "../configs/queue.js"
 import {fetchProducts} from "../configs/serp.js"
 import crypto from 'crypto'
@@ -162,14 +162,10 @@ export const toolExecutors = {
       }
 
       const publicId = `scan_${userId}_${Date.now()}`
-      const uploadResult = await cloudinary.uploader.upload(
-        imageUrl,
-        {
-          folder: 'fashion/scan',
-          public_id: publicId,
-          overwrite: false,
-        }
-      );
+      const uploadResult = await uploadImage(imageUrl, {
+        folder: 'fashion/scan',
+        publicId
+      });
 
       // Generate image hash from the uploaded URL (or fallback to provided imageUrl)
       const hashSource = uploadResult?.secure_url || imageUrl || '';

@@ -1,7 +1,7 @@
 import BodyProfile from "../models/profile.model.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import { api_error } from "../utils/errorHandler.js"
-import cloudinary from "../configs/cloudinary.js"
+import { uploadImage } from "../utils/uploads/cloudinaryUpload.js"
 import { skinToneQueue } from "../configs/queue.js"
 import { setCache, getCache, deleteCache, generateCacheKey } from "../utils/cache.js"
 import {
@@ -40,14 +40,10 @@ export const scanSkinTone = asyncHandeler(async (req, res, next) => {
 
     // Upload to cloudinary
     const publicId = `skintone_${userId}_${Date.now()}`;
-    const uploadResult = await cloudinary.uploader.upload(
-      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
-      {
-        folder: 'fashion/skintone',
-        public_id: publicId,
-        overwrite: false,
-      }
-    );
+    const uploadResult = await uploadImage(req.file, {
+      folder: 'fashion/skintone',
+      publicId
+    });
 
     // Socket: uploaded
     await emitSkinToneProgress(userId, 30, "Image uploaded to cloud storage");

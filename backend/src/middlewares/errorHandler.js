@@ -17,6 +17,20 @@ const errorHandler = (err, req, res, next) => {
         return res.status(401).json({ error: 'Token expired' });
     }
 
+    /* Multer's own failures. A file over the limit is the client's problem and
+       needs a status that says so — this used to fall through to a 500 with
+       "File too large", which reads like a server fault. */
+    if (err.name === 'MulterError') {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: 'Image is too large — the limit is 5MB' });
+        }
+        return res.status(400).json({
+            error: err.code === 'LIMIT_UNEXPECTED_FILE'
+                ? `Upload rejected: unexpected field "${err.field}"`
+                : `Upload rejected: ${err.message}`
+        });
+    }
+
     // Multer file errors
     if (err.message.includes('Only image files')) {
         return res.status(400).json({ error: 'Only image files are allowed' });

@@ -44,6 +44,12 @@ export function apiError(error, fallback = 'Something went wrong') {
   /* No response at all means the request never reached the server — almost
      always because the Express backend isn't running on the expected port. */
   if (error?.code === 'ERR_NETWORK' || error?.message === 'Network Error') {
+    /* A file upload is the one request big enough for a proxy in front of the
+       API to refuse it before Express ever sees it: nginx answers 413 with no
+       CORS headers, and the browser can only report that as a network error. */
+    if (typeof FormData !== 'undefined' && error?.config?.data instanceof FormData) {
+      return 'The photo was refused before it reached the server — large images are the usual cause. Try a smaller photo.';
+    }
     return `Can't reach the server at ${API_URL}. Is the backend running?`;
   }
   if (error?.code === 'ECONNABORTED') {

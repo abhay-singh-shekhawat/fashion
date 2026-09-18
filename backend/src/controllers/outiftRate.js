@@ -1,7 +1,7 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import { api_error } from "../utils/errorHandler.js";
 import { scanQueuelite } from "../configs/queue.js";
-import cloudinary from "../configs/cloudinary.js";
+import { uploadImage } from "../utils/uploads/cloudinaryUpload.js";
 import getWeather from "../utils/getWeather.js";
 import { generateOutfitTips, generateQuickOutfitTips, generateOutfitFeedback } from "../utils/generateOutfitTips.js";
 import { awardPoints } from "./progress.controller.js";
@@ -96,14 +96,10 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
     if (file) {
       /* The queue worker needs a URL it can hand to Gemini, so uploaded files
          go through the same Cloudinary path the scanner uses. */
-      const uploadResult = await cloudinary.uploader.upload(
-        `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
-        {
-          folder: "fashion/ratings",
-          public_id: `rate_${uploadSeed}`,
-          overwrite: false,
-        }
-      );
+      const uploadResult = await uploadImage(file, {
+        folder: "fashion/ratings",
+        publicId: `rate_${uploadSeed}`
+      });
       imageUrl = uploadResult.secure_url;
       publicId = uploadResult.public_id;
       imageBuffer = file.buffer;
