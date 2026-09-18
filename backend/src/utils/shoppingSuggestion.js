@@ -1,15 +1,17 @@
 import { fetchProducts } from '../configs/serp.js';
-import Groq from "groq-sdk";
-
-/* Built on first use, not at import: this module is loaded while the server
-   boots, which is before dotenv has put the key into process.env. */
-let groqClient = null;
-const getGroq = () => {
-  if (!groqClient) groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  return groqClient;
-};
+import { z } from "zod";
+import { generateStructured } from "./groqJson.js";
 
 export const MAX_SHOPPING_SUGGESTIONS = 3;
+
+/* Structured output keeps the ideas in this shape, so a reply can no longer
+   arrive with the items nested somewhere else. */
+const SUGGESTIONS_SCHEMA = z.object({
+  suggestions: z.array(z.object({
+    item: z.string(),
+    reason: z.string()
+  }))
+});
 
 /* "prefer_not_to_say" is an answer to our form, not a word to search for, so it
    is dropped from the query instead of being sent to Google Shopping. The
@@ -69,14 +71,12 @@ TASK:
 
   let parsed;
   try {
-    const response = await getGroq().chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [{ role: "user", content: aiPrompt }],
-      temperature: 0.7,
-      response_format: { type: "json_object" },
+    parsed = await generateStructured({
+      name: "shopping_suggestions",
+      schema: SUGGESTIONS_SCHEMA,
+      prompt: aiPrompt,
+      temperature: 0.7
     });
-
-    parsed = JSON.parse(response.choices[0]?.message?.content ?? "{}");
   } catch (error) {
     console.warn("Shopping suggestion AI failed:", error?.message || error);
     return { suggestions: [] };

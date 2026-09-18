@@ -1,5 +1,6 @@
 import { rateOutfitHarmony } from "./colorHarmony.js";
 import { outfitKey } from "./recommendationHistory.js";
+import { getRecommendedColors } from "./skinTonePalatte.js";
 import {
   calculateOutfitScore,
   deriveOutfitFormality,
@@ -37,12 +38,12 @@ export const describePiece = (piece) => {
   return `${name} (${color})`;
 };
 
-const scoreComposition = (composition, { feel, occasion, skinTone }) => {
+const scoreComposition = (composition, { feel, occasion, skinTone, palette }) => {
   const pieces = piecesOf(composition);
 
   return calculateOutfitScore({
     colorHarmonyScore: rateOutfitHarmony(pieces.map((piece) => piece.color)).score,
-    skinToneFit: estimateSkinToneFit(skinTone, pieces.map((piece) => piece.color)),
+    skinToneFit: estimateSkinToneFit(skinTone, pieces.map((piece) => piece.color), palette),
     weatherSuitability: estimateWeatherSuitability(feel, pieces.map((piece) => piece.name)),
     formalityMatch: estimateFormalityMatch({
       occasion,
@@ -61,8 +62,11 @@ const scoreComposition = (composition, { feel, occasion, skinTone }) => {
  *
  * `previousSuggestions` maps an outfit key to the record that already used it,
  * which is how a candidate knows it would be a repeat.
+ *
+ * The skin tone palette is resolved once here (and cached), rather than once
+ * per candidate outfit.
  */
-export const buildOutfitCandidates = ({
+export const buildOutfitCandidates = async ({
   items = [],
   temperature,
   occasion = "daily",
@@ -71,6 +75,7 @@ export const buildOutfitCandidates = ({
 } = {}) => {
   const wardrobe = Array.isArray(items) ? items : [];
   const feel = temperatureFeel(temperature);
+  const palette = skinTone ? await getRecommendedColors(skinTone) : null;
 
   const uppers = inCategories(wardrobe, UPPER_CATEGORIES);
   const lowers = inCategories(wardrobe, LOWER_CATEGORIES);
@@ -100,7 +105,7 @@ export const buildOutfitCandidates = ({
   return compositions
     .map((composition) => {
       const pieces = piecesOf(composition);
-      const { score, message } = scoreComposition(composition, { feel, occasion, skinTone });
+      const { score, message } = scoreComposition(composition, { feel, occasion, skinTone, palette });
       const key = outfitKey(pieces);
 
       return {

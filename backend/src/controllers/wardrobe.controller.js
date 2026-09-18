@@ -5,14 +5,11 @@ import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
 import { awardPoints } from "./progress.controller.js"
-import Groq from "groq-sdk";
+import { z } from "zod";
+import { generateStructured } from "../utils/groqJson.js";
 import { setCache , getCache , deleteCache , generateCacheKey } from "../utils/cache.js"
 import { buildOutfitCandidates, describePiece, temperatureFeel } from "../utils/outfitCandidates.js"
 import { formatSuggestedDay, lookbackCutoff } from "../utils/recommendationHistory.js"
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
 
 /* The model only ranks outfits the wardrobe can actually build, so a short
    list is plenty — and keeps the prompt small. */
@@ -60,25 +57,23 @@ TASK:
 1. Choose the single best outfit for this person, this weather and this occasion
 2. Return its index in "candidateIndex"
 3. Explain the choice in "reason" (one or two sentences)
-
-Return STRICT JSON:
-{
-  "candidateIndex": 0,
-  "reason": "...",
-  "confidence": 0-1
-}
 `;
 
-  try {
-    const response = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.6,
-      response_format: { type: "json_object" },
-    });
+  /* The valid index range is part of the schema, so the model can no longer
+     answer with a position that doesn't exist. */
+  const rankingSchema = z.object({
+    candidateIndex: z.number().int().min(0).max(candidates.length - 1),
+    reason: z.string(),
+    confidence: z.number().min(0).max(1)
+  });
 
-    const content = response.choices[0]?.message?.content;
-    return content ? JSON.parse(content) : null;
+  try {
+    return await generateStructured({
+      name: "wardrobe_ranking",
+      schema: rankingSchema,
+      prompt,
+      temperature: 0.6
+    });
   } catch (error) {
     /* Groq being down or rate limited must not take the daily fit down with
        it — the caller falls back to the best-scored candidate. */
@@ -226,7 +221,7 @@ export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
     }
   });
 
-  const candidates = buildOutfitCandidates({
+  const candidates = await buildOutfitCandidates({
     items,
     temperature: temp,
     occasion: "daily",
@@ -347,7 +342,7 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
   const temp = weather.temperature;
   const feel = temperatureFeel(temp);
 
-  const candidates = buildOutfitCandidates({
+  const candidates = await buildOutfitCandidates({
     items,
     temperature: temp,
     occasion,

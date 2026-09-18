@@ -1,8 +1,18 @@
-import Groq from "groq-sdk";
+import { z } from "zod";
+import { generateStructured } from "./groqJson.js";
+import { getCache, setCache } from "./cache.js";
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+const PALETTE_SCHEMA = z.object({
+  best: z.array(z.string()),
+  avoid: z.array(z.string()),
+  message: z.string()
 });
+
+/* A palette depends only on the skin tone, and every scored outfit asks for
+   one — building a day of outfit candidates used to fire a Groq call per
+   candidate. The colours for a tone don't move, so a day of cache is plenty. */
+const PALETTE_TTL_SECONDS = 24 * 60 * 60;
+const paletteCacheKey = (tone) => `skin-tone-palette:${tone}`;
 
 export const getRecommendedColors = async (skinTone) => {
   // Default fallback (if AI fails or no key)
@@ -41,57 +51,44 @@ export const getRecommendedColors = async (skinTone) => {
     return defaultPalette;
   }
 
-  try {
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: `You are an expert Indian fashion color analyst. 
-          Provide culturally relevant, practical color recommendations for Indian skin tones and clothing styles (kurti, saree, sherwani, etc.).
-          Always respond with valid JSON only.`
-        },
-        {
-          role: "user",
-          content: `For skin tone "${normalizedTone}", recommend the best colors for Indian fashion.
+  const cached = await getCache(paletteCacheKey(normalizedTone));
+  if (cached) return cached;
 
-          Return ONLY this exact JSON structure (no extra text):
-          {
-            "best": ["color1", "color2", "color3", ...],
-            "avoid": ["color1", "color2", ...],
-            "message": "short stylish message (max 20 words)"
-          }`
-        }
-      ],
-      model: "openai/gpt-oss-120b",
+  try {
+    /* Structured outputs pin the model to this exact shape, so the reply is
+       never parsed by hand and can't arrive with a missing field. `max_tokens`
+       still needs headroom for the hidden reasoning tokens — at 300
+       gpt-oss-120b spent the whole allowance thinking, and Groq rejected the
+       empty document with json_validate_failed. reasoning_effort: "low" keeps
+       that thinking short for what is really just a lookup. */
+    const aiOutput = await generateStructured({
+      name: "skin_tone_palette",
+      schema: PALETTE_SCHEMA,
+      system: `You are an expert Indian fashion color analyst.
+      Provide culturally relevant, practical color recommendations for Indian skin tones and clothing styles (kurti, saree, sherwani, etc.).`,
+      prompt: `For skin tone "${normalizedTone}", recommend colors for Indian fashion.
+      - best: 5 to 8 colors that flatter this tone
+      - avoid: colors that wash it out
+      - message: one short stylish sentence (max 20 words) about the palette`,
       temperature: 0.65,
-      /* gpt-oss-120b is a reasoning model, and its hidden reasoning tokens are
-         drawn from this same budget. At 300 it routinely spent the entire
-         allowance thinking and emitted no JSON at all, which Groq rejects with
-         json_validate_failed — "max completion tokens reached before generating
-         a valid document". The JSON body itself only needs ~60 tokens; the rest
-         is headroom. reasoning_effort: "low" keeps the thinking short for what
-         is really just a lookup. */
-      max_tokens: 1000,
-      reasoning_effort: "low",
-      response_format: { type: "json_object" }
+      maxTokens: 1000,
+      reasoningEffort: "low"
     });
 
-    let aiOutput;
-    try {
-      aiOutput = JSON.parse(completion.choices[0].message.content);
-    } catch (parseError) {
-      console.warn("Failed to parse Groq JSON response:", parseError.message);
-      return defaultPalette;
-    }
-
     // Merge AI result with fallback for safety (never return empty arrays)
-    return {
-      best: Array.isArray(aiOutput.best) && aiOutput.best.length > 0 
-        ? aiOutput.best.slice(0, 8) 
+    const palette = {
+      best: aiOutput.best.length
+        ? aiOutput.best.slice(0, 8)
         : defaultPalette.best,
-      avoid: Array.isArray(aiOutput.avoid) ? aiOutput.avoid : defaultPalette.avoid,
+      avoid: aiOutput.avoid.length
+        ? aiOutput.avoid
+        : defaultPalette.avoid,
       message: aiOutput.message || defaultPalette.message
     };
+
+    await setCache(paletteCacheKey(normalizedTone), palette, PALETTE_TTL_SECONDS);
+
+    return palette;
 
   } catch (error) {
     console.warn(`Groq AI failed for skinTone "${normalizedTone}":`, error.message);

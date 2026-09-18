@@ -25,6 +25,7 @@ import {
   emitRatingScoreDone,
 } from "../services/socketService.js"
 import { generateJson, fetchImagePart } from "../utils/gemini.js"
+import { getRecommendedColors } from "../utils/skinTonePalatte.js"
 
 const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
     const { userId, imageUrl, publicId, imageHash, occasion = "casual", detailedFeedback = false, jobType } = job.data;
@@ -100,7 +101,8 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         const bodyProfile = await BodyProfile.findOne({ user: userId });
         if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
           const colors = analysis.detectedItems.map(item => item.color);
-          skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
+          const palette = await getRecommendedColors(bodyProfile.skinTone);
+          skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors, palette);
           await emitRatingSkinToneDone(userId, skinToneScore, { skinTone: bodyProfile.skinTone });
         }
 

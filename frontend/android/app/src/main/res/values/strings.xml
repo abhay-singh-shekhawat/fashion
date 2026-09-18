@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">StyleSense</string>
+    <string name="title_activity_main">StyleSense</string>
+    <string name="package_name">com.stylesense.app</string>
+    <string name="custom_url_scheme">com.stylesense.app</string>
+</resources>

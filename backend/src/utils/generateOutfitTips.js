@@ -1,4 +1,6 @@
 import Groq from "groq-sdk";
+import { z } from "zod";
+import { generateStructured } from "./groqJson.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -243,57 +245,43 @@ Rules:
 - Build the colour harmony section on COLOUR ANALYSIS and the formality section on FORMALITY — never contradict what they found.
 - Plain sentences only — no markdown, no emoji, no bullet characters inside the strings.${detailed ? "" : "\n- Keep it tight: one short sentence per field."}`;
 
+  /* The dimensions being explained are baked into the schema, so the model can
+     only answer with keys the panel renders. An unknown key used to cost the
+     whole section, which is why the keys are no longer left to the prompt. */
+  const feedbackSchema = z.object({
+    headline: z.string(),
+    sections: z.array(z.object({
+      key: wanted.length ? z.enum(wanted) : z.string(),
+      verdict: z.enum(["great", "good", "off"]),
+      why: z.string(),
+      fix: z.string()
+    })),
+    quickWins: z.array(z.string())
+  });
+
   try {
-    const response = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [{ role: "user", content: prompt }],
+    const parsed = await generateStructured({
+      name: "outfit_feedback",
+      schema: feedbackSchema,
+      prompt,
       temperature: 0.5,
-      max_tokens: detailed ? 900 : 550,
-      response_format: { type: "json_object" }
+      maxTokens: detailed ? 900 : 550
     });
 
-    const raw = response.choices[0]?.message?.content || "";
-    const parsed = JSON.parse(raw);
-    const sections = Array.isArray(parsed?.sections) ? parsed.sections : [];
-    const allowed = new Set(wanted);
     const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
-    /* The model drifts between "weather", "weatherFit" and "weatherSuitability"
-       for the same dimension — an unknown key used to drop the whole section. */
-    const KEY_ALIASES = {
-      color: "colorHarmony",
-      colors: "colorHarmony",
-      colours: "colorHarmony",
-      colour: "colorHarmony",
-      colourharmony: "colorHarmony",
-      colorharmony: "colorHarmony",
-      weather: "weatherSuitability",
-      weatherfit: "weatherSuitability",
-      weathersuitability: "weatherSuitability",
-      formality: "formalityMatch",
-      formalitymatch: "formalityMatch",
-      skintone: "skinToneFit",
-      skintonefit: "skinToneFit",
-    };
-
-    const resolveKey = (value) => {
-      if (allowed.has(value)) return value;
-      return KEY_ALIASES[String(value ?? "").toLowerCase().replace(/[^a-z]/g, "")] ?? null;
-    };
-
     const seen = new Set();
-    const mapped = sections
-      .map((section) => ({ ...section, key: resolveKey(section?.key) }))
+    const mapped = parsed.sections
       .filter((section) => {
-        if (!section.key || seen.has(section.key)) return false;
+        if (seen.has(section.key)) return false;
         seen.add(section.key);
         return true;
       })
       .map((section) => ({
         key: section.key,
-        verdict: ["great", "good", "off"].includes(section?.verdict) ? section.verdict : "good",
-        why: text(section?.why, 320),
-        fix: text(section?.fix, 200)
+        verdict: section.verdict,
+        why: text(section.why, 320),
+        fix: text(section.fix, 200)
       }))
       .filter((section) => section.why || section.fix);
 
@@ -301,11 +289,11 @@ Rules:
        numbers, just no prose. */
     const missing = wanted.filter((key) => !seen.has(key));
     const feedback = {
-      headline: text(parsed?.headline, 120),
+      headline: text(parsed.headline, 120),
       sections: [
         ...wanted.map((key) => mapped.find((section) => section.key === key)).filter(Boolean),
       ],
-      quickWins: (Array.isArray(parsed?.quickWins) ? parsed.quickWins : [])
+      quickWins: parsed.quickWins
         .map((win) => text(win, 160))
         .filter(Boolean)
         .slice(0, 4)

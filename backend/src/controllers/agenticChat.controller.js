@@ -14,20 +14,23 @@ import {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Timeout configuration (in ms)
-const CHAT_TOTAL_TIMEOUT_MS = 25000;       // hard cap for the whole chat request
-const MODEL_CALL_TIMEOUT_MS = 15000;       // per Gemini call
-const TOOL_CALL_TIMEOUT_MS = 10000;         // per tool executor call
+const CHAT_TOTAL_TIMEOUT_MS = 45000;       // hard cap for the whole chat request
+const MODEL_CALL_TIMEOUT_MS = 20000;       // per Gemini call, clamped to what is left
+const TOOL_CALL_TIMEOUT_MS = 12000;        // per tool executor call, clamped too
+const MIN_STEP_BUDGET_MS = 2000;           // below this a call cannot finish, so it is not started
+
+const timeoutError = (label, ms) => {
+  const err = new Error(`${label} timed out after ${ms}ms`);
+  err.status = 504;
+  err.code = 'TIMEOUT';
+  return err;
+};
 
 // Helper: race a promise against a timeout. Resolves with the original result or rejects with a Timeout error.
 const withTimeout = (promise, ms, label) => {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      const err = new Error(`${label} timed out after ${ms}ms`);
-      err.status = 504;
-      err.code = 'TIMEOUT';
-      reject(err);
-    }, ms);
+    timer = setTimeout(() => reject(timeoutError(label, ms)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
@@ -84,15 +87,22 @@ const isDailyQuotaError = (error) =>
 /**
  * Ask each alias until one answers, and report which one did — the completion
  * event used to credit the primary model no matter who actually replied.
+ *
+ * Each attempt is clamped to what is left of the request budget: a slow first
+ * alias cannot push the reply past the total cap, and the next alias is not
+ * started once there is no time left for it to answer.
  */
-const generateWithFallback = async (contents) => {
+const generateWithFallback = async (contents, remaining) => {
   let lastError;
 
   for (const alias of MODEL_CHAIN) {
+    const budget = Math.min(MODEL_CALL_TIMEOUT_MS, remaining());
+    if (budget < MIN_STEP_BUDGET_MS) break;
+
     try {
       const result = await withTimeout(
         modelFor(alias).generateContent({ contents }),
-        MODEL_CALL_TIMEOUT_MS,
+        budget,
         'Gemini model call'
       );
       return { result, model: alias };
@@ -104,7 +114,7 @@ const generateWithFallback = async (contents) => {
     }
   }
 
-  throw lastError;
+  throw lastError ?? timeoutError('Gemini model call', CHAT_TOTAL_TIMEOUT_MS);
 };
 
 /**
@@ -159,48 +169,6 @@ const ensureConversation = (userId) => {
   return meta;
 };
 
-// Robust JSON extraction from a text block. Tries code fences first, then balanced-brace scanning.
-const extractJsonFromText = (text) => {
-  if (!text || typeof text !== 'string') return null;
-
-  // 1) Try to extract JSON from ```json or ``` fenced code blocks
-  try {
-    const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
-    const cb = codeBlockRegex.exec(text);
-    if (cb && cb[1]) {
-      const candidate = cb[1].trim();
-      try { return JSON.parse(candidate); } catch (e) { /* continue */ }
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  // 2) Try to find first balanced JSON object or array in the text
-  const startIdx = text.search(/[\{\[]/);
-  if (startIdx === -1) return null;
-  const startChar = text[startIdx];
-  const endChar = startChar === '{' ? '}' : ']';
-
-  let depth = 0;
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === startChar) depth++;
-    else if (ch === endChar) depth--;
-
-    if (depth === 0) {
-      const substr = text.slice(startIdx, i + 1);
-      try {
-        return JSON.parse(substr);
-      } catch (e) {
-        // if parse fails, continue scanning in case there are later JSON blobs
-        continue;
-      }
-    }
-  }
-
-  return null;
-};
-
 export const agenticChat = asyncHandeler(async(req,res,next) => {
     /* Identity comes from the verified token (authMiddleware), never from the
        body: the app posts multipart/form-data with only `message` (+ `image`),
@@ -239,6 +207,11 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       conversationHistory.set(userId, meta);
 
       const startTime = Date.now();
+      /* One deadline for the whole reply: the model calls, the tool calls and
+         the reply streaming all draw from the same budget, so a slow turn can
+         eat the time without a later step running past the cap. */
+      const deadline = startTime + CHAT_TOTAL_TIMEOUT_MS;
+      const remaining = () => deadline - Date.now();
 
       // Build the conversation contents array for generateContent.
       // The newer Gemini API expects function responses to use role 'user'
@@ -289,12 +262,15 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
       let result;
       let answeredModel = null;
 
-      // Loop: call model, handle function calls, repeat
+      /* Loop: call model, handle function calls, repeat. This used to be wrapped
+         in `if (!shortCircuit)`, which put the reply — and the res.json() below —
+         inside the same block: a message that short-circuited before the loop
+         (missing profile) never got a response at all. Guarding the loop lets
+         every path fall through to the reply. */
       const MAX_TOOL_ITERATIONS = 6;
-      if (!shortCircuit) {
-        for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+      for (let iter = 0; !shortCircuit && iter < MAX_TOOL_ITERATIONS; iter++) {
         // Hard cap on the whole chat request
-        if (Date.now() - startTime > CHAT_TOTAL_TIMEOUT_MS) {
+        if (remaining() < MIN_STEP_BUDGET_MS) {
           console.warn(`[Chat] Total timeout exceeded for user ${userId}`);
           shortCircuit = {
             message: "I'm taking a bit too long to respond. Please try again in a moment.",
@@ -304,7 +280,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         }
 
         try {
-          const answered = await generateWithFallback(contents);
+          const answered = await generateWithFallback(contents, remaining);
           result = answered.result;
           answeredModel = answered.model;
         } catch (modelErr) {
@@ -332,11 +308,14 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
 
           // Emit response chunks - stream words safely
           const words = typeof finalReply === 'string' ? finalReply.split(' ') : [];
+          /* The typing delay is simulated, so it is paced against whatever is
+             left of the budget instead of a flat 30ms per word — a long answer
+             used to spend seconds past the total cap on its own. */
+          const wordDelay = Math.min(30, Math.max(0, Math.floor(remaining() / Math.max(words.length, 1))));
           for (const word of words) {
             await emitChatResponseChunk(userId, word + ' ', chunkIndex);
             chunkIndex++;
-            // Simulate streaming delay
-            await new Promise(resolve => setTimeout(resolve, 30));
+            if (wordDelay) await new Promise(resolve => setTimeout(resolve, wordDelay));
           }
           break;
         }
@@ -358,12 +337,25 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         if (!executor) {
           console.warn(`[Chat] Requested unknown tool: ${name}`);
           toolResult = { error: true, status: 400, message: `Unknown tool: ${name}`, tool: name };
+        } else if (remaining() < MIN_STEP_BUDGET_MS) {
+          /* Starting a tool this late only guarantees a timeout it can never
+             recover from, so the request ends here with an honest message. */
+          console.warn(`[Chat] Total timeout reached before tool ${name} for user ${userId}`);
+          shortCircuit = {
+            message: "I'm taking a bit too long to respond. Please try again in a moment.",
+            reason: 'total_timeout'
+          };
+          break;
         } else {
           try {
             const execPromise = (parsedArgs && (parsedArgs.imageUrl || imageUrl))
               ? executor({ userId, imageUrl: parsedArgs.imageUrl || imageUrl, ...parsedArgs })
               : executor({ userId, ...(parsedArgs || {}) });
-            toolResult = await withTimeout(execPromise, TOOL_CALL_TIMEOUT_MS, `Tool ${name}`);
+            toolResult = await withTimeout(
+              execPromise,
+              Math.min(TOOL_CALL_TIMEOUT_MS, remaining()),
+              `Tool ${name}`
+            );
           } catch (toolErr) {
             console.error(`[Chat] Tool ${name} execution failed:`, toolErr?.message || toolErr);
             toolResult = {
@@ -416,15 +408,16 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         finalReply = shortCircuit.message;
       }
 
-      // Robust parsing of finalReply: try to extract JSON, else wrap as message
-      let parsedReply;
-      const extracted = extractJsonFromText(finalReply);
-      if (extracted !== null) {
-        parsedReply = extracted;
-      } else {
-        // Fallback: return as { message: text }
-        parsedReply = { message: String(finalReply).trim() };
+      /* Every tool-loop exit that produced no prose — the iteration cap, say —
+         would otherwise answer with an empty bubble. */
+      if (!String(finalReply).trim()) {
+        finalReply = "I couldn't put an answer together just now — could you rephrase that?";
       }
+
+      /* The stylist is prompted for a conversational reply, so it is returned
+         as prose. Sniffing the text for JSON only ever mangled answers that
+         happened to contain braces. */
+      const parsedReply = { message: String(finalReply).trim() };
 
       // Store assistant reply in conversation history
       meta.messages.push({ role: 'assistant', content: finalReply, ts: Date.now() });
@@ -446,8 +439,7 @@ export const agenticChat = asyncHandeler(async(req,res,next) => {
         reply: parsedReply,
         success: true
       });
-    }
-  } catch (error) {
+    } catch (error) {
       console.error("[Chat] Error:", error?.message || error);
       try { await emitChatError(userId, error?.message || error); } catch(e){}
       throw error;

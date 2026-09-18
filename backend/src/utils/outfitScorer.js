@@ -1,5 +1,3 @@
-import { getRecommendedColors } from "./skinTonePalatte.js";
-
 // Scoring weights
 const WEIGHTS = {
   color: 30,
@@ -257,15 +255,19 @@ export const deriveOutfitFormality = (items = []) => {
 };
 
 /**
- * Estimate how well outfit colors match the user's skin tone
+ * Estimate how well outfit colors match the user's skin tone.
+ *
+ * `palette` is the already-resolved getRecommendedColors() result. Resolving it
+ * in here made it a per-outfit async call — and because the promise was never
+ * awaited, `palette.best` was always undefined and every outfit quietly scored
+ * the neutral 12. Callers resolve it once and pass it in.
  */
-export const estimateSkinToneFit = (skinTone, colors = []) => {
+export const estimateSkinToneFit = (skinTone, colors = [], palette = null) => {
   // Return 0 if skin tone wasn't provided or is unknown
   if (!skinTone || skinTone === "unknown") {
     return 0;
   }
 
-  const palette = getRecommendedColors(skinTone);
   if (!palette?.best?.length) {
     return 12; // Neutral score if lookup fails
   }

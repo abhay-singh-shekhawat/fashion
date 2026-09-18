@@ -15,6 +15,13 @@ const app = express()
 const httpServer = http.createServer(app)
 const PORT = process.env.PORT || 5000
 
+/* The API is reached through a reverse proxy (the public host in the app's
+   env), so every request carries an X-Forwarded-For header. Without this,
+   express-rate-limit refuses the header with ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+   and every caller is counted as one IP — the proxy's. Only the loopback hop
+   is trusted, so a client cannot spoof its address. */
+app.set("trust proxy", "loopback")
+
 // Initialize Socket.IO
 const { io, isUserOnline, emitToUser } = initializeSocket(httpServer)
 global.io = io

@@ -2,7 +2,7 @@
 
 ## Base URL
 ```
-http://localhost:3000/api/v1
+https://fashion.sytes.net/api/v1
 ```
 
 ---

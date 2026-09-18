@@ -17,6 +17,7 @@ import {
   deriveOutfitFormality
 } from "../utils/outfitScorer.js";
 import { rateOutfitHarmony } from "../utils/colorHarmony.js";
+import { getRecommendedColors } from "../utils/skinTonePalatte.js";
 import crypto from "crypto";
 import {
   emitRatingStart,
@@ -203,7 +204,8 @@ export const rateOutfitController = asyncHandler(async (req, res) => {
       const bodyProfile = await BodyProfile.findOne({ user: userId });
       if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
         const colors = scanResult.items.map(item => item.color);
-        skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
+        const palette = await getRecommendedColors(bodyProfile.skinTone);
+        skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors, palette);
       }
     } catch (scoreError) {
       console.warn("[Outfit Rating] Score estimation failed:", scoreError.message);
@@ -386,7 +388,8 @@ export const rateSavedOutfitController = asyncHandler(async (req, res) => {
   const bodyProfile = await BodyProfile.findOne({ user: userId });
   if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
     const colors = items.map(i => i.color);
-    skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors);
+    const palette = await getRecommendedColors(bodyProfile.skinTone);
+    skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors, palette);
   }
 
   // Score the outfit

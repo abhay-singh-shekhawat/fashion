@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? 'http://localhost:3000';
+export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? 'https://fashion.sytes.net';
 
 let socket = null;
 let socketToken = null;
