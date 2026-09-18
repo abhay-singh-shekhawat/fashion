@@ -130,7 +130,9 @@ export default function ScanOutfit() {
               </p>
             </div>
             <PhotoSourceButtons onPick={handlePick} onError={setUploadError} />
-            <span className="text-[11px] text-white/30">JPG or PNG · up to 5MB</span>
+            <span className="text-[11px] text-white/30">
+              JPG, PNG or HEIC · large photos are resized automatically
+            </span>
           </div>
         ) : null}
 

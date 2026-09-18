@@ -4,6 +4,7 @@ import ClothingItem from "../models/clothingItem.model.js"
 import { awardPoints } from "../controllers/progress.controller.js"
 import { invalidateWardrobeCaches } from "../controllers/wardrobe.controller.js"
 import { generateJson, fetchImagePart } from "../utils/gemini.js"
+import { FASHION_IMAGE_RULES, NOT_FASHION_MESSAGE, readOutfitAnalysis } from "../utils/fashionImage.js"
 import {
   emitScanProgress,
   emitScanItemsDetected,
@@ -91,8 +92,11 @@ const scanWorker = new Worker(`outfit-scan`,async(job)=>{
         }
 
         const prompt = `Analyze this outfit image in detail for a fashion app.
+        ${FASHION_IMAGE_RULES}
         Return JSON only with this structure:
         {
+          "isFashionImage": true or false,
+          "rejectionReason": "short reason, only when isFashionImage is false",
           "detectedItems": [
             {"type": "shirt|kurti|jeans|trousers|jacket|saree|...", "color": "blue|red|...", "confidence": 0.9},
             ...
@@ -125,9 +129,22 @@ const scanWorker = new Worker(`outfit-scan`,async(job)=>{
           throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
         }
 
+        const { items: detectedItems, isFashionImage, rejectionReason } = readOutfitAnalysis(analysis);
+
+        /* A photo with no clothes in it (poster, screenshot, food) used to be
+           "scanned" into an empty closet and reported as a success. Nothing is
+           saved and no points are awarded — the user is told why instead. */
+        if (!isFashionImage) {
+            console.warn(
+                `Scan job ${job.id} rejected — no clothing detected${rejectionReason ? `: ${rejectionReason}` : ''}`
+            );
+            await emitScanItemsDetected(userId, []);
+            await emitScanError(userId, NOT_FASHION_MESSAGE);
+            return { status: 'not_fashion_image' };
+        }
+
         const savedItems = [];
         const globalFormality = asFormality(analysis?.formalityLevel);
-        const detectedItems = Array.isArray(analysis?.detectedItems) ? analysis.detectedItems : [];
 
         await emitScanItemsDetected(userId, detectedItems);
 

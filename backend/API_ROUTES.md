@@ -356,6 +356,11 @@ https://fashion.sytes.net/api/v1
 - `400` - No image uploaded
 - `401` - Unauthorized
 - `404` - Profile not found
+- `413` - Photo larger than the 10MB upload limit
+
+**Rejection:** a photo with no clothing in it is refused by the AI check inside the worker —
+the request still returns `202`, then `scan:error` carries "no clothing found". Nothing is
+saved to the closet and no points are awarded.
 
 **Rewards:** 8 points awarded for uploading scan
 
@@ -625,10 +630,18 @@ https://fashion.sytes.net/api/v1
 - `rating:error` - Error during rating
 
 **Error Codes:**
-- `400` - Missing imageUrl / No clothing items detected
+- `400` - Missing image upload / imageUrl, or the link could not be downloaded
 - `401` - Unauthorized
 - `404` - User not found
+- `413` - Photo larger than the 10MB upload limit
 - `500` - Score calculation error
+
+**Rejection / limits:**
+- Photos without clothing (posters, flyers, screenshots) are refused by the AI check inside
+  the worker, so they return `202` first and then arrive as `rating:error` with a message
+  saying no clothing was found. Nothing is added to history and no points are awarded.
+- The web app resizes picked photos to 1600px in the browser, so the 10MB cap is only
+  reached by API clients that upload originals.
 
 **Rewards:** 5-10 points awarded based on score
 

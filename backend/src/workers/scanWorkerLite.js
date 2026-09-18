@@ -1,4 +1,4 @@
-import {Worker} from "bullmq"
+import {Worker, UnrecoverableError} from "bullmq"
 import { workerOptions } from "../configs/queue.js"
 import ClothingItem from "../models/clothingItem.model.js"
 import BodyProfile from "../models/profile.model.js"
@@ -26,6 +26,7 @@ import {
 } from "../services/socketService.js"
 import { generateJson, fetchImagePart } from "../utils/gemini.js"
 import { getRecommendedColors } from "../utils/skinTonePalatte.js"
+import { FASHION_IMAGE_RULES, NOT_FASHION_MESSAGE, readOutfitAnalysis } from "../utils/fashionImage.js"
 
 const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
     const { userId, imageUrl, publicId, imageHash, occasion = "casual", detailedFeedback = false, jobType } = job.data;
@@ -42,8 +43,11 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         }
 
         const prompt = `Analyze this outfit image in detail for a fashion app.
+        ${FASHION_IMAGE_RULES}
         Return JSON only with this structure:
         {
+          "isFashionImage": true or false,
+          "rejectionReason": "short reason, only when isFashionImage is false",
           "detectedItems": [
             {"type": "shirt|kurti|jeans|trousers|jacket|saree|...", "color": "blue|red|...", "confidence": 0.9},
             ...
@@ -63,7 +67,20 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
           throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
         }
 
-        console.log(`Scan job ${job.id} completed - Item Data: ${analysis.detectedItems.length}`);
+        const { items: detectedItems, isFashionImage, rejectionReason } = readOutfitAnalysis(analysis);
+
+        /* A poster is not an outfit: scoring one produced a confident-looking
+           57/100 and filed it in history. UnrecoverableError stops the job here
+           rather than retrying an image that will never be scorable, and the
+           catch below turns it into a `rating:error` the user can read. */
+        if (!isFashionImage) {
+          console.warn(
+            `[Rating] Job ${job.id} rejected — no clothing detected${rejectionReason ? `: ${rejectionReason}` : ''}`
+          );
+          throw new UnrecoverableError(NOT_FASHION_MESSAGE);
+        }
+
+        console.log(`Scan job ${job.id} completed - Item Data: ${detectedItems.length}`);
 
         // ========== GET WEATHER ==========
         let weatherData;
@@ -81,7 +98,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         }
 
         // ========== CALCULATE SCORES ==========
-        const categories = analysis.detectedItems.map(item => item.type?.toLowerCase()).filter(Boolean);
+        const categories = detectedItems.map(item => item.type?.toLowerCase()).filter(Boolean);
         const tempCategory = weatherData.temperature > 28 ? "hot" : weatherData.temperature < 15 ? "cold" : "mild";
         const weatherScore = estimateWeatherSuitability(tempCategory, categories);
 
@@ -100,7 +117,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         let skinToneScore = 0;
         const bodyProfile = await BodyProfile.findOne({ user: userId });
         if (bodyProfile?.skinTone && bodyProfile.skinTone !== 'unknown') {
-          const colors = analysis.detectedItems.map(item => item.color);
+          const colors = detectedItems.map(item => item.color);
           const palette = await getRecommendedColors(bodyProfile.skinTone);
           skinToneScore = estimateSkinToneFit(bodyProfile.skinTone, colors, palette);
           await emitRatingSkinToneDone(userId, skinToneScore, { skinTone: bodyProfile.skinTone });
@@ -109,7 +126,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
         /* Colour harmony and formality are judged from what was actually
            detected — how many pairs of colours clash, and how far the outfit's
            formality sits from the occasion the user picked. */
-        const harmony = rateOutfitHarmony(analysis.detectedItems.map(item => item.color));
+        const harmony = rateOutfitHarmony(detectedItems.map(item => item.color));
         const formality = estimateFormalityMatch({
           occasion,
           formalityLevel: analysis.formalityLevel
@@ -150,7 +167,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
 
           const feedback = await generateOutfitFeedback({
             outfitScore,
-            detectedItems: analysis.detectedItems,
+            detectedItems: detectedItems,
             weather: weatherForUi,
             colorHarmony: colorHarmonyForUi,
             formality: formalityForUi,
@@ -189,9 +206,9 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
           message: outfitScore.message,
           breakdown: outfitScore.breakdown,
           scannedOutfit: {
-            items: analysis.detectedItems,
-            itemCount: analysis.detectedItems.length,
-            colors: analysis.detectedItems.map(i => i.color),
+            items: detectedItems,
+            itemCount: detectedItems.length,
+            colors: detectedItems.map(i => i.color),
             formalityLevel: analysis.formalityLevel,
             overallStyle: analysis.overallStyle
           },
@@ -227,7 +244,7 @@ const scanWorker = new Worker(`outfit-scan-lite`,async(job)=>{
 
         await emitRatingComplete(userId, { success: true, message: "Outfit scanning complete", rating: finalResult });
 
-        return { success: true, items: analysis.detectedItems, rating: finalResult };
+        return { success: true, items: detectedItems, rating: finalResult };
     } catch (error) {
         console.error(`Scan job ${job.id} failed:`, error.message);
         await emitRatingError(job.data.userId, error.message);

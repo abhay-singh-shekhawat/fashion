@@ -1,3 +1,5 @@
+import { MAX_UPLOAD_MB } from '../utils/uploads/multer.js';
+
 const errorHandler = (err, req, res, next) => {
     console.error('Error:', err.message);
 
@@ -22,7 +24,9 @@ const errorHandler = (err, req, res, next) => {
        "File too large", which reads like a server fault. */
     if (err.name === 'MulterError') {
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({ error: 'Image is too large — the limit is 5MB' });
+            return res.status(413).json({
+                error: `Image is too large — the limit is ${MAX_UPLOAD_MB}MB`
+            });
         }
         return res.status(400).json({
             error: err.code === 'LIMIT_UNEXPECTED_FILE'
