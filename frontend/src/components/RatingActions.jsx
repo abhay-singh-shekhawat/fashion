@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Dialog, DialogButton } from 'konsta/react';
 import { useDeleteRating, useFavouriteRating } from '../hooks/useRatingHistory';
+import ConfirmDialog from './ConfirmDialog';
 import { StarIcon, TrashIcon } from './Icons';
 
 /**
@@ -32,7 +32,7 @@ export default function RatingActions({ rating, onDeleted, className = '' }) {
           className={`press grid h-9 w-9 place-items-center rounded-full ring-1 transition-colors disabled:opacity-50 ${
             starred
               ? 'bg-brand-lime/15 text-brand-lime ring-brand-lime/35'
-              : 'bg-white/[0.05] text-white/40 ring-white/10'
+              : 'glass-tile text-white/40 ring-white/10'
           }`}
         >
           {/* Filled star reads as "kept"; the outline is the untouched state. */}
@@ -44,25 +44,19 @@ export default function RatingActions({ rating, onDeleted, className = '' }) {
           onClick={() => setConfirming(true)}
           disabled={busy}
           aria-label="Delete this rating"
-          className="press grid h-9 w-9 place-items-center rounded-full bg-white/[0.05] text-white/40 ring-1 ring-white/10 transition-colors disabled:opacity-50"
+          className="press grid h-9 w-9 place-items-center rounded-full glass-tile text-white/40 ring-1 ring-white/10 transition-colors disabled:opacity-50"
         >
           <TrashIcon className="h-4 w-4" />
         </button>
       </div>
 
-      <Dialog
+      <ConfirmDialog
         opened={confirming}
-        onBackdropClick={() => setConfirming(false)}
+        onCancel={() => setConfirming(false)}
         title="Delete this fit?"
         content="The score and its photo go away for good. Star it instead to keep it around."
-        buttons={
-          <>
-            <DialogButton onClick={() => setConfirming(false)}>Cancel</DialogButton>
-            <DialogButton strong onClick={confirmDelete}>
-              Delete
-            </DialogButton>
-          </>
-        }
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
       />
     </>
   );

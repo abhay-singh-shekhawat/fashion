@@ -19,12 +19,36 @@ export function useDailyOutfit() {
   });
 }
 
-export function useOccasionOutfit(occasion) {
+/**
+ * Occasion ideas that are deliberately not built from the closet: the backend
+ * writes them from the body profile, the occasion and today's weather. The
+ * nonce gives each "another one" its own request.
+ */
+export function useOccasionIdeas(occasion, { nonce = 0 } = {}) {
   const { token } = useAuth();
   return useQuery({
-    queryKey: ['occasionOutfit', occasion],
+    queryKey: ['occasionIdeas', occasion, nonce],
     queryFn: async () =>
-      (await api.get(ENDPOINTS.occasionOutfit, { params: { occasion } })).data,
+      (await api.get(ENDPOINTS.occasionIdeas, { params: { occasion, refresh: 1 } })).data,
+    enabled: Boolean(token) && Boolean(occasion),
+  });
+}
+
+/**
+ * One occasion, styled from the closet.
+ *
+ * `refresh` asks the backend for a combination it has not just handed back
+ * (it bypasses the 5-minute cache and skips the previous pick), and `nonce`
+ * makes each of those re-rolls a distinct query rather than a cache hit.
+ */
+export function useOccasionOutfit(occasion, { refresh = false, nonce = 0 } = {}) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: ['occasionOutfit', occasion, refresh ? 'refresh' : 'closet', nonce],
+    queryFn: async () =>
+      (await api.get(ENDPOINTS.occasionOutfit, {
+        params: { occasion, ...(refresh ? { refresh: 1 } : {}) },
+      })).data,
     enabled: Boolean(token) && Boolean(occasion),
   });
 }

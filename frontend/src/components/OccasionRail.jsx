@@ -36,13 +36,24 @@ const TONES = {
  * The occasion shelf. Each tile is one tappable answer ("style me for this"),
  * not a filter: it opens the fit sheet for that occasion and shows a spinner
  * in place while that fit is being built.
+ *
+ * `bleed` lets the rail scroll to the screen edge on its own (the page-level
+ * use); pass false when it sits inside a card, where its padding is the bound.
  */
-export default function OccasionRail({ onSelect, active, loadingKey = null, className = '' }) {
+export default function OccasionRail({
+  onSelect,
+  active,
+  loadingKey = null,
+  className = '',
+  bleed = true,
+}) {
   return (
     <div
       role="group"
       aria-label="Style me for"
-      className={`no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4 pt-1 pb-2 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 ${className}`}
+      className={`no-scrollbar flex gap-2.5 overflow-x-auto pt-1 pb-2 ${
+        bleed ? '-mx-4 px-4 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8' : ''
+      } ${className}`}
     >
       {OCCASIONS.map((occasion) => {
         const isActive = active === occasion.key;
@@ -57,7 +68,7 @@ export default function OccasionRail({ onSelect, active, loadingKey = null, clas
             aria-busy={isLoading || undefined}
             onClick={() => onSelect?.(occasion.key)}
             className={`press relative flex w-[84px] shrink-0 flex-col items-center gap-2 overflow-hidden rounded-3xl px-2 pt-3 pb-2.5 ring-1 outline-none focus-visible:ring-2 focus-visible:ring-brand-primary md:w-[96px] ${
-              isActive ? tone.tile : 'hover-lift bg-white/[0.04] ring-white/10'
+              isActive ? tone.tile : 'hover-lift glass-tile ring-white/10'
             }`}
           >
             <span

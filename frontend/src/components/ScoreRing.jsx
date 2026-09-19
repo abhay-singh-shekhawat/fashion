@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 /** Circular gauge with a cubic-eased count-up.
  *  Pass `value` to drive the ring independently of the displayed number. */
-export default function ScoreRing({ score = 0, value, tone = '#A855F7', size = 176, stroke = 12, caption }) {
+export default function ScoreRing({ score = 0, value, tone = '#DFC3A9', size = 176, stroke = 12, caption }) {
   const [display, setDisplay] = useState(0);
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;

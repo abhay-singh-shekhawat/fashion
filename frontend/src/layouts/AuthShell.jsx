@@ -15,7 +15,7 @@ export default function AuthShell() {
           /* Matches the app shell: the header scrolls with the page rather than
              pinning over it (see `navbar-inline` in main.css). */
           className="navbar-inline"
-          bgClassName="bg-ink-950/75 backdrop-blur-xl border-b border-white/10"
+          bgClassName="bg-ink-950/70 backdrop-blur-xl border-b border-white/10 shadow-[0_12px_34px_-26px_rgba(223,195,169,0.55)]"
           titleClassName="font-display font-bold tracking-tight"
           left={
             pathname !== '/auth/login' ? (

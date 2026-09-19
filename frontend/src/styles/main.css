@@ -7,27 +7,45 @@
   /* Konsta brand colours — the `--color-brand-` prefix is mandatory.
      These generate Tailwind utilities (bg-brand-lime) AND the
      `k-color-brand-lime` class used to theme Konsta components.
-     Violet stays primary: the reference uses violet for surfaces and
-     lime only as a sub-2%-of-screen accent. */
-  --color-brand-primary: #a855f7;
-  --color-brand-lime: #c6ff3d;
-  --color-brand-cyan: #22d3ee;
-  --color-brand-pink: #ff4d8d;
-  --color-brand-amber: #ffb020;
-  --color-brand-error: #ff3b5c;
 
-  /* Indigo is the reference's hero-gradient partner. Used once per screen,
-     on the Today fit card, and nowhere else. */
-  --color-brand-indigo: #5b4ccd;
+     Warm-luxury register: the accent family is metal, not spectrum. Every
+     brand hue is a temperature inside the same champagne/bronze world, so a
+     screen full of chips reads as one material instead of a colour wheel. */
+  --color-brand-primary: #dfc3a9; /* champagne — the accent */
+  --color-brand-lime: #c2a88f; /* bronze — action links + filled CTA */
+  --color-brand-cyan: #b8ada1; /* pewter — informational */
+  --color-brand-pink: #c79a94; /* rosewood */
+  --color-brand-amber: #c9a06a; /* brass — warnings, mid scores */
+  --color-brand-error: #ffb4ab; /* soft warm red */
+  --color-brand-indigo: #8a6a4a; /* deep bronze — hero gradient partner */
 
-  /* Obsidian surface ramp — true black base, cool grey surfaces.
-     Measured off the reference: bg #000000, cards #161a1c–#19191c. */
-  --color-ink-950: #000000;
-  --color-ink-900: #141618;
-  --color-ink-800: #1d2023;
-  --color-ink-700: #2a2e32;
+  /* Warm charcoal ramp. The surface is never neutral grey: every step carries
+     a trace of the brand hue, which is what stops a dark UI feeling dead. */
+  --color-ink-950: #141312; /* app canvas */
+  --color-ink-900: #1d1b1a; /* card */
+  --color-ink-800: #2b2a28; /* raised */
+  --color-ink-700: #363433; /* highest */
 
-  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  /* Re-tinting the neutrals is the single highest-leverage move in this
+     system: every `text-white/45`, `bg-white/[0.04]` and `border-white/10`
+     already written across the app becomes warm in one edit, and the
+     luminance (so the contrast) barely moves. Pure white on a warm canvas
+     reads cold; this is the off-white the reference paints its text in, and
+     `black` becomes the dark brown that sits on a champagne fill. */
+  --color-white: #e6e1df;
+  --color-black: #241a12;
+
+  /* Playfair carries the editorial voice — headlines, scores, figures. Outfit
+     is the instrument: labels, body, controls. */
+  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Glass surfaces. The fill is translucent so the warm canvas reads through
+     the blur instead of being covered by it; the rim is a gradient rather than
+     a flat border colour, which is what makes an edge look like it is catching
+     light instead of being drawn. */
+  --glass-fill: rgb(29 27 26 / 0.72);
+  --glass-fill-strong: rgb(29 27 26 / 0.88);
 
   /* Radius scale — cards and heroes step deliberately instead of by accident. */
   --radius-card: 1.25rem;
@@ -49,12 +67,89 @@
   --animate-sheen: sheen 3.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
+/* The card language: warm translucent glass with a glowing rim.
+   
+   The border is `transparent` on purpose. The fill and the rim are two layers
+   of `background`, the first clipped to the padding box and the second to the
+   border box, so the gradient shows through the transparent border. That is
+   what gives the edge a light-catching fade around the corners instead of a
+   hard one-pixel line, and it is why nothing here sets a border colour.
+   
+   Outside the rim: a deep drop for weight, and a low champagne bloom so the
+   card sits in its own light rather than on a flat canvas. */
 @utility glass {
-  @apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md;
+  @apply rounded-3xl border border-transparent backdrop-blur-md;
+  background:
+    linear-gradient(var(--glass-fill), var(--glass-fill)) padding-box,
+    linear-gradient(
+        155deg,
+        color-mix(in oklab, var(--color-white) 18%, transparent),
+        color-mix(in oklab, var(--color-white) 3%, transparent) 45%,
+        color-mix(in oklab, var(--color-brand-primary) 16%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--color-white) 7%, transparent),
+    0 18px 44px -26px rgb(0 0 0 / 0.95),
+    0 0 30px -10px color-mix(in oklab, var(--color-brand-primary) 22%, transparent);
 }
 
+/* The same edge on a denser fill, for the few surfaces that carry the screen. */
 @utility glass-strong {
-  @apply rounded-3xl border border-white/10 bg-white/[0.06] backdrop-blur-xl;
+  @apply rounded-3xl border border-transparent backdrop-blur-xl;
+  background:
+    linear-gradient(var(--glass-fill-strong), var(--glass-fill-strong)) padding-box,
+    linear-gradient(
+        155deg,
+        color-mix(in oklab, var(--color-white) 22%, transparent),
+        color-mix(in oklab, var(--color-white) 4%, transparent) 45%,
+        color-mix(in oklab, var(--color-brand-primary) 18%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--color-white) 8%, transparent),
+    0 24px 56px -28px rgb(0 0 0 / 0.98),
+    0 0 42px -12px color-mix(in oklab, var(--color-brand-primary) 26%, transparent);
+}
+
+/* A smaller raised surface — icon tiles, list rows, chips, inputs.
+   It deliberately sets no radius, so the caller keeps whatever rounding the
+   element needs, and it carries no backdrop blur: a screen can hold twenty of
+   these, and the glass reads from the translucent fill and the rim alone. */
+@utility glass-tile {
+  @apply border border-transparent;
+  background:
+    linear-gradient(
+        color-mix(in oklab, var(--color-ink-800) 62%, transparent),
+        color-mix(in oklab, var(--color-ink-800) 62%, transparent)
+      )
+      padding-box,
+    linear-gradient(
+        150deg,
+        color-mix(in oklab, var(--color-white) 14%, transparent),
+        color-mix(in oklab, var(--color-white) 2%, transparent) 50%,
+        color-mix(in oklab, var(--color-brand-primary) 12%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--color-white) 6%, transparent),
+    0 10px 26px -20px rgb(0 0 0 / 0.9),
+    0 0 18px -8px color-mix(in oklab, var(--color-brand-primary) 18%, transparent);
+}
+
+/* Hover on a glass surface brightens the whole element instead of repainting
+   it: both the fill and the rim are background layers, so a hover
+   background-color would be painted underneath them and never seen. */
+@utility glass-hover {
+  transition:
+    filter 200ms ease-out,
+    transform 200ms ease-out;
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      filter: brightness(1.12);
+    }
+  }
 }
 
 @utility pill {
@@ -117,29 +212,64 @@
   }
 }
 
-/* Konsta's Sheet is a bottom sheet by construction: `fixed`, `top-full`, and it
-   slides up with `-translate-y-full` (which sets the `translate` property, not
-   `transform` — hence the override below). At lg+ we reposition the same
-   element into a centred modal. Written as plain CSS rather than utilities
-   because these values have to win outright against Konsta's own classes, and
-   an unlayered rule does so regardless of source order. */
-@media (width >= 64rem) {
-  .sheet-desktop {
-    top: 50% !important;
-    left: 50% !important;
-    right: auto !important;
-    width: 100% !important;
-    max-width: 32rem !important;
-    max-height: 85vh;
-    overflow-y: auto;
-    translate: -50% -50% !important;
-    border-radius: 1.5rem !important;
-    transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
+/* Sheets and dialogs land in the middle of the screen at every width, wearing
+   the same glass as the cards — the clicked component pops out, and the rest of
+   the app stays behind a blurred scrim (see ResponsiveSheet.jsx for the scrim).
+   
+   Konsta builds a sheet as a bottom sheet by construction: `fixed top-full` and
+   it slides up with `-translate-y-full`, which sets the `translate` property
+   rather than `transform`. These values therefore have to win outright, so this
+   is a plain unlayered rule rather than a pile of utilities. The entrance
+   animates `transform`, which composes with `translate` instead of fighting it. */
+.glass-modal {
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  width: 100% !important;
+  max-width: 30rem !important;
+  max-height: 85vh;
+  overflow-y: auto;
+  translate: -50% -50% !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--glass-fill-strong), var(--glass-fill-strong)) padding-box,
+    linear-gradient(
+        155deg,
+        color-mix(in oklab, var(--color-white) 22%, transparent),
+        color-mix(in oklab, var(--color-white) 4%, transparent) 45%,
+        color-mix(in oklab, var(--color-brand-primary) 18%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--color-white) 8%, transparent),
+    0 44px 90px -40px rgb(0 0 0 / 1),
+    0 0 60px -18px color-mix(in oklab, var(--color-brand-primary) 30%, transparent);
+}
 
-  .sheet-desktop[data-state='closed'] {
+.glass-modal[data-state='open'] {
+  animation: modal-pop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.glass-modal[data-state='closed'] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Three beats: appear, a small overshoot, settle. A flat fade reads as a
+   tooltip; this reads as something arriving. */
+@keyframes modal-pop {
+  0% {
     opacity: 0;
-    visibility: hidden;
+    transform: translateY(12px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -181,6 +311,17 @@
   position: static;
 }
 
+/* The display face carries its own weight scale. Playfair Display at 700 is
+   far heavier than Outfit at 700 was, and at UI sizes (18-24px) its thick/thin
+   contrast turns clunky — the reference sets every serif heading between 400
+   and 500. Capping the pair here keeps ~25 `font-display font-bold` call sites
+   in step without a hunt, and leaves Outfit's own bold untouched.
+   Unlayered and two classes deep, so it wins over the utility without
+   `!important`. */
+.font-display.font-bold {
+  font-weight: 500;
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -194,6 +335,19 @@
 
   #root {
     min-height: 100dvh;
+  }
+
+  /* One focus ring for the whole app, in the accent colour, offset so it never
+     collides with the element's own edge. Keyboard users get the same signal
+     on a champagne chip, a dark input, and a card CTA. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-primary);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(223 195 169 / 0.3);
+    color: var(--color-white);
   }
 }
 

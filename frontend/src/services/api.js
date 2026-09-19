@@ -36,7 +36,10 @@ export function apiError(error, fallback = 'Something went wrong') {
   if (error?.response) {
     const data = error.response.data;
     if (data?.details?.length) return data.details[0]?.message ?? data.error ?? fallback;
-    if (typeof data === 'string' && data.trim()) return data;
+    /* A route the server doesn't have — or an error page from the proxy —
+       answers with HTML, not our JSON envelope. Dumping that markup into a
+       toast tells the user nothing. */
+    if (typeof data === 'string' && data.trim() && !data.trim().startsWith('<')) return data;
     if (data?.error) return data.error;
     return fallback;
   }
@@ -69,8 +72,10 @@ export const ENDPOINTS = {
   profileGet: '/profile/get/profile',
   wardrobe: '/wardrobe/get/wardrobe',
   wardrobeAdd: '/wardrobe/add/item',
+  wardrobeRemove: (id) => `/wardrobe/remove/item/${id}`,
   dailyOutfit: '/wardrobe/get/suggestions',
   occasionOutfit: '/wardrobe/api/suggestions/occasion',
+  occasionIdeas: '/suggestion/get/occasion/suggestions',
   scanOutfit: '/scan/outfit',
   chat: '/agent/chat',
   progress: '/progress/get/progress',

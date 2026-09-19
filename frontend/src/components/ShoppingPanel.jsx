@@ -85,7 +85,7 @@ export default function ShoppingPanel() {
             type="button"
             onClick={() => findIdeas({ fresh: true })}
             disabled={shopping.isFetching}
-            className="press flex w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] py-3 text-xs font-bold ring-1 ring-white/10 disabled:opacity-60"
+            className="press flex w-full items-center justify-center gap-2 rounded-full glass-tile py-3 text-xs font-bold ring-1 ring-white/10 disabled:opacity-60"
           >
             <RefreshIcon className={`h-3.5 w-3.5 ${shopping.isFetching ? 'animate-spin' : ''}`} />
             {shopping.isFetching ? 'Looking again…' : 'Look again'}
@@ -103,7 +103,7 @@ export default function ShoppingPanel() {
                   target="_blank"
                   rel="noreferrer"
                   aria-label={product.title ?? 'Product'}
-                  className="press grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/[0.04] ring-1 ring-white/10"
+                  className="press grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl glass-tile ring-1 ring-white/10"
                 >
                   {product.image ? (
                     <img
@@ -151,7 +151,7 @@ export default function ShoppingPanel() {
                           href={product.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="press hover-lift w-32 shrink-0 overflow-hidden rounded-2xl bg-white/[0.04] ring-1 ring-white/10"
+                          className="press hover-lift w-32 shrink-0 overflow-hidden rounded-2xl glass-tile ring-1 ring-white/10"
                         >
                           <span className="grid aspect-[4/5] w-full place-items-center overflow-hidden bg-white/[0.03]">
                             {product.image ? (
@@ -200,7 +200,7 @@ export default function ShoppingPanel() {
             type="button"
             onClick={() => findIdeas({ fresh: true })}
             disabled={shopping.isFetching}
-            className="press flex w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] py-3 text-xs font-bold ring-1 ring-white/10 disabled:opacity-60"
+            className="press flex w-full items-center justify-center gap-2 rounded-full glass-tile py-3 text-xs font-bold ring-1 ring-white/10 disabled:opacity-60"
           >
             <RefreshIcon className={`h-3.5 w-3.5 ${shopping.isFetching ? 'animate-spin' : ''}`} />
             {refreshLabel}

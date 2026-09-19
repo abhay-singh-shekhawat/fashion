@@ -140,7 +140,7 @@ export default function SkinToneScanner({ tone = 'unknown', onResult, onBusyChan
           <button
             type="button"
             onClick={reset}
-            className="press flex w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] py-3.5 text-sm font-bold ring-1 ring-white/10"
+            className="press flex w-full items-center justify-center gap-2 rounded-full glass-tile py-3.5 text-sm font-bold ring-1 ring-white/10"
           >
             <RefreshIcon className="h-4 w-4" /> Scan again
           </button>

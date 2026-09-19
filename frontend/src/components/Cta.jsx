@@ -1,23 +1,44 @@
 import { Button, Preloader } from 'konsta/react';
 
-/* Glow is opt-in. The reference uses flat, high-contrast capsules with no
-   bloom, so violet-on-black reads as the primary action through colour alone. */
+/* The action language: a champagne fill carrying dark warm text, the way the
+   reference caps every screen.
+   
+   Konsta's own fill pair paints white text on the brand colour, which dies the
+   moment the brand becomes a light metal — hence the `colors` override, which
+   replaces its fill background and fill text wholesale.
+
+   `primary` and `lime` are the same treatment on purpose: callers picked
+   between them when one was violet and one was lime, but in this palette both
+   mean "the single main action on this screen". */
+const CHAMPAGNE = {
+  fillBgIos: 'bg-gradient-to-r from-brand-primary to-brand-lime active:opacity-90',
+  fillTextIos: 'text-ink-950',
+};
+
 const TONES = {
   primary: {
-    color: 'k-color-brand-primary',
-    glow: 'shadow-[0_10px_34px_-12px_rgba(168,85,247,0.85)]',
+    colors: CHAMPAGNE,
+    glow: 'shadow-[0_16px_36px_-16px_rgba(223,195,169,0.5)]',
   },
   lime: {
-    color: 'k-color-brand-lime',
-    glow: 'shadow-[0_10px_34px_-12px_rgba(198,255,61,0.75)]',
+    colors: CHAMPAGNE,
+    glow: 'shadow-[0_16px_36px_-16px_rgba(223,195,169,0.5)]',
   },
+  /* Secondary action: a raised warm surface rather than a second bright fill,
+     so a screen never shows two competing accents. */
   cyan: {
-    color: 'k-color-brand-cyan',
-    glow: 'shadow-[0_10px_34px_-12px_rgba(34,211,238,0.75)]',
+    colors: {
+      fillBgIos: 'bg-ink-800 active:bg-ink-700',
+      fillTextIos: 'text-white',
+    },
+    glow: 'shadow-[0_16px_36px_-18px_rgba(0,0,0,0.9)]',
   },
   error: {
-    color: 'k-color-brand-error',
-    glow: 'shadow-[0_10px_34px_-12px_rgba(255,59,92,0.75)]',
+    colors: {
+      fillBgIos: 'bg-brand-error active:opacity-90',
+      fillTextIos: 'text-ink-950',
+    },
+    glow: 'shadow-[0_16px_36px_-16px_rgba(255,180,171,0.4)]',
   },
 };
 
@@ -30,12 +51,12 @@ export default function Cta({
   ...rest
 }) {
   const theme = TONES[tone] ?? TONES.primary;
-  const classes = [theme.color, glow && theme.glow, 'font-bold tracking-tight', className]
+  const classes = [glow && theme.glow, 'font-semibold tracking-tight', className]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <Button rounded large className={classes} {...rest}>
+    <Button rounded large colors={theme.colors} className={classes} {...rest}>
       {loading ? <Preloader className="h-5 w-5" /> : children}
     </Button>
   );

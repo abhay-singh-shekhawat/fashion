@@ -1,6 +1,8 @@
 import BodyProfile from "../models/profile.model.js"
 import ClothingItem from "../models/clothingItem.model.js"
 import OutfitSuggestion from "../models/outfitSuggestion.model.js"
+import mongoose from "mongoose"
+import cloudinary from "../configs/cloudinary.js"
 import getWeather from "../utils/getWeather.js"
 import asyncHandeler from "../utils/asyncHandler.js"
 import {api_error} from "../utils/errorHandler.js"
@@ -100,7 +102,10 @@ const formatOutfit = (composition = {}) => ({
   piece: composition.piece ? formatClothingItemFull(composition.piece) : null
 });
 
-const occasionToFormalities = {
+/* Which formality levels each occasion accepts. Exported because the idea
+   generator in suggestion.controller.js grades its answers against the same
+   table — one list, so the two can never disagree. */
+export const occasionToFormalities = {
     casual: ['casual', 'smart_casual', 'sporty'],
     daily: ['casual', 'smart_casual'],
     office: ['smart_casual', 'business', 'formal'],
@@ -173,6 +178,42 @@ export const getWardrobe = asyncHandeler(async(req,res,next)=>{
     await setCache(cacheKey, payload, 300);
 
     res.status(200).json(payload);
+})
+
+/** Removes one piece the user owns. The wardrobe is Redis-cached for 300s, so
+ *  the write has to bust it or the item stays on screen for five more minutes. */
+export const removeClothingItem = asyncHandeler(async(req,res,next)=>{
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    /* A malformed id would otherwise reach Mongoose and surface as a 500. */
+    if (!mongoose.isValidObjectId(id)) {
+      throw new api_error(404, "Item not found")
+    }
+
+    const item = await ClothingItem.findOne({ _id: id, userId });
+    if (!item) {
+      throw new api_error(404, "Item not found")
+    }
+
+    await item.deleteOne();
+
+    /* One scanned photo can yield several pieces that all share a single
+       Cloudinary asset, so the file only goes away with the last item still
+       pointing at it. Manual items carry a synthetic `manual_...` publicId that
+       was never uploaded, so there is nothing to destroy for those. */
+    if (item.publicId && !item.publicId.startsWith('manual_')) {
+      try {
+        const stillReferenced = await ClothingItem.exists({ userId, publicId: item.publicId });
+        if (!stillReferenced) await cloudinary.uploader.destroy(item.publicId);
+      } catch (cleanupError) {
+        console.warn(`[Wardrobe] Could not remove Cloudinary asset ${item.publicId}: ${cleanupError.message}`);
+      }
+    }
+
+    await invalidateWardrobeCaches(userId);
+
+    res.status(200).json({ success: true, deleted: item._id });
 })
 
 export const getWardrobeSuggestions = asyncHandeler(async(req,res,next)=>{
@@ -312,9 +353,12 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
   /* The occasion is part of the cache key — without it the first occasion
      queried gets served for every other occasion. */
   const occasion = req.query.occasion || req.body.occasion;
+  /* `refresh=1` asks for a different combination instead of the remembered one
+     — the same convention the shopping endpoint uses. */
+  const refresh = req.query.refresh === "1" || req.query.refresh === "true";
   const cacheKey = generateCacheKey(`W-occasion-suggestions:${occasion}`, userId);
   const cached = await getCache(cacheKey);
-  if (cached) return res.status(200).json(cached);
+  if (cached && !refresh) return res.status(200).json(cached);
 
   if (!occasionToFormalities[occasion]) {
     throw new api_error(400, "Invalid occasion");
@@ -359,7 +403,16 @@ export const getOccasionSuggestion = asyncHandeler(async(req,res,next)=>{
 
   const shortlist = candidates.slice(0, AI_CANDIDATE_LIMIT);
   const ai = await generateWardrobeAI({ profile, weather, occasion, candidates: shortlist });
-  const chosen = shortlist[ai?.candidateIndex] ?? shortlist[0];
+  let chosen = shortlist[ai?.candidateIndex] ?? shortlist[0];
+
+  /* A refresh must not hand back the outfit it is replacing: when the stylist
+     lands on the same combination again, the next candidate takes its place. */
+  if (refresh && cached?.suggestion && chosen?.label === cached.suggestion) {
+    const index = shortlist.indexOf(chosen);
+    if (index !== -1 && shortlist.length > 1) {
+      chosen = shortlist[(index + 1) % shortlist.length];
+    }
+  }
 
   const allowedFormalities = occasionToFormalities[occasion];
   const formalityMatch = chosen.pieces.every((piece) =>

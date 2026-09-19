@@ -17,7 +17,7 @@ export default function StageChecklist({ stages, done = {}, error = null }) {
           <div
             key={stage.key}
             className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors duration-300 ${
-              isActive ? 'bg-white/[0.05]' : ''
+              isActive ? 'glass-tile' : ''
             }`}
           >
             <span
@@ -26,7 +26,7 @@ export default function StageChecklist({ stages, done = {}, error = null }) {
                   ? 'bg-brand-lime/20 text-brand-lime ring-brand-lime/40'
                   : isActive
                     ? 'bg-brand-primary/20 text-brand-primary ring-brand-primary/40'
-                    : 'bg-white/[0.04] text-white/25 ring-white/10'
+                    : 'glass-tile text-white/25 ring-white/10'
               }`}
             >
               {complete ? (

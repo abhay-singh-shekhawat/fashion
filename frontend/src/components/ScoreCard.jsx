@@ -160,7 +160,7 @@ export default function ScoreCard({
                 {dimensions.length ? (
                   <div className="space-y-2">
                     <span className="text-[10px] font-bold tracking-[0.18em] text-white/40 uppercase">
-                      Why this score {sections.length ? '· tap a row' : ''}
+                      Why this score
                     </span>
 
                     {dimensions.map(([key, value]) => {
@@ -184,9 +184,8 @@ export default function ScoreCard({
                     })}
 
                     {!dimensions.some(([key]) => key === 'skinToneFit') ? (
-                      <p className="px-1 text-[11px] leading-relaxed text-white/30">
-                        Skin tone fit isn't scored yet — scan your tone from your profile and it
-                        joins the breakdown.
+                      <p className="px-1 text-[11px] text-white/30">
+                        Not scored yet — scan your tone in your profile.
                       </p>
                     ) : null}
 
@@ -224,7 +223,7 @@ export default function ScoreCard({
                                 className="h-9 w-9 shrink-0 rounded-xl object-cover ring-1 ring-white/10"
                               />
                             ) : (
-                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-base ring-1 ring-white/10">
+                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl glass-tile text-base ring-1 ring-white/10">
                                 {typeEmoji(label)}
                               </span>
                             )}

@@ -27,8 +27,8 @@ export default function PhotoSourceButtons({ onPick, onError, primaryTone = 'bra
 
   const primaryClass =
     primaryTone === 'brand-primary'
-      ? 'bg-brand-primary text-white shadow-[0_10px_30px_-12px_rgba(168,85,247,0.9)]'
-      : 'bg-brand-cyan text-black shadow-[0_10px_30px_-12px_rgba(34,211,238,0.8)]';
+      ? 'bg-gradient-to-r from-brand-primary to-brand-lime text-ink-950 shadow-[0_16px_36px_-16px_rgba(223,195,169,0.5)]'
+      : 'bg-brand-primary text-ink-950 shadow-[0_16px_36px_-18px_rgba(223,195,169,0.45)]';
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -68,7 +68,7 @@ export default function PhotoSourceButtons({ onPick, onError, primaryTone = 'bra
       <ImagePicker onPick={onPick} onError={onError}>
         <button
           type="button"
-          className={`${BASE} bg-white/[0.06] text-white/80 ring-1 ring-white/10`}
+          className={`${BASE} glass-tile text-white/80 ring-1 ring-white/10`}
         >
           <ImageIcon className="h-4 w-4" />
           Upload from gallery

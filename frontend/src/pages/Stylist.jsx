@@ -79,7 +79,7 @@ export default function Stylist() {
                         ? 'rounded-br-lg bg-brand-primary/20 ring-1 ring-brand-primary/30'
                         : message.error
                           ? 'rounded-bl-lg bg-brand-error/10 ring-1 ring-brand-error/25'
-                          : 'rounded-bl-lg bg-white/[0.05] ring-1 ring-white/10 backdrop-blur-md'
+                          : 'rounded-bl-lg glass-tile ring-1 ring-white/10 backdrop-blur-md'
                     }`}
                   >
                     {message.image ? (
@@ -102,7 +102,7 @@ export default function Stylist() {
 
             {isTyping && messages.at(-1)?.content ? (
               <div className="flex justify-start">
-                <div className="rounded-3xl rounded-bl-lg bg-white/[0.05] px-4 py-3 ring-1 ring-white/10">
+                <div className="rounded-3xl rounded-bl-lg glass-tile px-4 py-3 ring-1 ring-white/10">
                   <TypingDots />
                 </div>
               </div>
@@ -137,7 +137,7 @@ export default function Stylist() {
               type="button"
               onClick={() => setAttachOpen(true)}
               aria-label="Attach a photo"
-              className="press grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/[0.06] text-white/60 ring-1 ring-white/10"
+              className="press grid h-11 w-11 shrink-0 place-items-center rounded-full glass-tile text-white/60 ring-1 ring-white/10"
             >
               <ImageIcon className="h-5 w-5" />
             </button>
@@ -146,14 +146,14 @@ export default function Stylist() {
               value={text}
               onChange={(event) => setText(event.target.value)}
               placeholder="Ask your stylist…"
-              className="min-w-0 flex-1 rounded-full border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-brand-primary/60"
+              className="min-w-0 flex-1 rounded-full border border-white/10 glass-tile px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-brand-primary/60"
             />
 
             <button
               type="submit"
               disabled={(!text.trim() && !file) || isSending}
               aria-label="Send"
-              className="press grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-primary text-white disabled:opacity-40"
+              className="press grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-primary text-ink-950 disabled:opacity-40"
             >
               <SendIcon className="h-5 w-5" />
             </button>

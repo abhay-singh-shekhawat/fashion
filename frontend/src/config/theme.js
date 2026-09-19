@@ -1,13 +1,18 @@
+/* The accent family is metal, not spectrum: every entry is a temperature
+   inside the same warm world, so a row of chips reads as one material rather
+   than a colour wheel. Names are kept from the previous palette so call sites
+   did not have to change — they were always semantic slots, and the slot now
+   resolves to champagne/bronze/pewter/rosewood/brass. */
 export const palette = {
-  violet: '#A855F7',
-  lime: '#C6FF3D',
-  cyan: '#22D3EE',
-  pink: '#FF4D8D',
-  amber: '#FFB020',
-  error: '#FF3B5C',
+  violet: '#DFC3A9', /* champagne — the primary accent */
+  lime: '#C2A88F', /* bronze — action links, filled CTA */
+  cyan: '#B8ADA1', /* pewter — informational */
+  pink: '#C79A94', /* rosewood */
+  amber: '#C9A06A', /* brass — warnings, mid scores */
+  error: '#FFB4AB', /* soft warm red */
   /* Hero-gradient partner, used once per screen (Today's fit card). */
-  indigo: '#5B4CCD',
-  ink: { 950: '#000000', 900: '#141618', 800: '#1D2023', 700: '#2A2E32' },
+  indigo: '#8A6A4A', /* deep bronze */
+  ink: { 950: '#141312', 900: '#1D1B1A', 800: '#2B2A28', 700: '#363433' },
 };
 
 /* Semantic surface names — prefer these over the raw ink step so a ramp change
@@ -233,6 +238,16 @@ export const VERDICTS = {
   great: { label: 'Great', tone: 'lime', bar: 'bg-brand-lime' },
   good: { label: 'Solid', tone: 'amber', bar: 'bg-brand-amber' },
   off: { label: 'Off', tone: 'error', bar: 'bg-brand-error' },
+};
+
+/* Mirrors the band the worker picks when it scores weather suitability
+   (backend/src/workers/scanWorkerLite.js — over 28 is hot, under 15 is cold),
+   so a badge on screen never disagrees with the score behind it. */
+export const weatherBand = (temperature) => {
+  if (typeof temperature !== 'number') return null;
+  if (temperature > 28) return 'hot';
+  if (temperature < 15) return 'cold';
+  return 'mild';
 };
 
 export function conditionEmoji(condition = '') {

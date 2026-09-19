@@ -102,7 +102,7 @@ export default function Onboarding() {
 
       <div className="mt-6 mb-6">
         <Pill tone="cyan">Step {step + 2} of 4</Pill>
-        <h1 className="font-display mt-3 text-3xl leading-tight font-bold tracking-tighter">
+        <h1 className="font-display mt-3 text-3xl leading-tight font-medium tracking-tight">
           {step === 0 && 'what are we working with?'}
           {step === 1 && 'a bit about you.'}
           {step === 2 && 'last one — your tone.'}
@@ -172,7 +172,7 @@ export default function Onboarding() {
                         setPickedManually(true);
                       }}
                       className={`press flex items-center gap-2 rounded-full py-2 pr-4 pl-2 ring-1 transition-colors ${
-                        active ? 'bg-white/[0.08] ring-brand-primary/60' : 'ring-white/10'
+                        active ? 'glass-tile ring-brand-primary/60' : 'ring-white/10'
                       }`}
                     >
                       <span
@@ -209,7 +209,7 @@ export default function Onboarding() {
           <button
             type="button"
             onClick={() => setStep((current) => current - 1)}
-            className="press flex-1 rounded-full bg-white/[0.06] py-3.5 text-sm font-bold ring-1 ring-white/10"
+            className="press flex-1 rounded-full glass-tile py-3.5 text-sm font-bold ring-1 ring-white/10"
           >
             Back
           </button>

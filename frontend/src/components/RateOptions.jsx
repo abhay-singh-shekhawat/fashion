@@ -35,7 +35,7 @@ export default function RateOptions({
                 onClick={() => onOccasion(entry.key)}
                 aria-pressed={active}
                 className={`press flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-colors ${
-                  active ? activeTone : 'bg-white/[0.04] text-white/55 ring-white/10 hover:text-white/80'
+                  active ? activeTone : 'glass-tile text-white/55 ring-white/10 hover:text-white/80'
                 }`}
               >
                 <span aria-hidden="true">{entry.emoji}</span>

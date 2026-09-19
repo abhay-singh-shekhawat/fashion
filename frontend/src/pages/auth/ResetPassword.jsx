@@ -87,7 +87,7 @@ export default function ResetPassword() {
     <div className="animate-fade-up px-5 py-8">
       <div className="mb-8">
         <Pill tone="violet">New password</Pill>
-        <h1 className="font-display mt-4 text-4xl leading-[1.05] font-bold tracking-tighter">
+        <h1 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-tight">
           pick something
           <br />
           <span className="text-brand-primary">you'll remember.</span>

@@ -16,9 +16,9 @@ export default function OutfitPieces({ outfit }) {
       {pieces.map(({ slot, item }) => (
         <div
           key={slot}
-          className="flex items-center gap-2 rounded-2xl bg-white/[0.04] p-2 ring-1 ring-white/10"
+          className="flex items-center gap-2 rounded-2xl glass-tile p-2 ring-1 ring-white/10"
         >
-          <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.05] ring-1 ring-white/10">
+          <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl glass-tile ring-1 ring-white/10">
             {item.image ? (
               <img src={item.image} alt={item.name ?? ''} className="h-full w-full object-cover" />
             ) : (

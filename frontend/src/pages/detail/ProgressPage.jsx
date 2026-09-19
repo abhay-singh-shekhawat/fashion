@@ -144,7 +144,7 @@ export default function ProgressPage() {
                         className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ring-1 ${
                           unlocked
                             ? 'bg-brand-primary/15 text-brand-primary ring-brand-primary/30'
-                            : 'bg-white/[0.04] text-white/30 ring-white/10'
+                            : 'glass-tile text-white/30 ring-white/10'
                         }`}
                       >
                         {unlocked ? '★' : '🔒'}

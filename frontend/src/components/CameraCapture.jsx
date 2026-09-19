@@ -104,7 +104,7 @@ export default function CameraCapture({ open, onClose, onPick, onError }) {
         <button
           type="button"
           onClick={onClose}
-          className="press grid h-9 w-9 place-items-center rounded-full bg-white/[0.08] text-lg leading-none font-bold text-white/70 ring-1 ring-white/10"
+          className="press grid h-9 w-9 place-items-center rounded-full glass-tile text-lg leading-none font-bold text-white/70 ring-1 ring-white/10"
         >
           ×
         </button>
@@ -140,7 +140,7 @@ export default function CameraCapture({ open, onClose, onPick, onError }) {
             >
               <button
                 type="button"
-                className="press rounded-full bg-white/[0.08] px-4 py-2 text-xs font-bold tracking-wide uppercase ring-1 ring-white/10"
+                className="press rounded-full glass-tile px-4 py-2 text-xs font-bold tracking-wide uppercase ring-1 ring-white/10"
               >
                 Choose a file instead
               </button>

@@ -60,7 +60,7 @@ export default function RateSaved() {
           <button
             type="button"
             onClick={() => rate.reset()}
-            className="press w-full rounded-full bg-white/[0.06] py-3.5 text-sm font-bold ring-1 ring-white/10"
+            className="press w-full rounded-full glass-tile py-3.5 text-sm font-bold ring-1 ring-white/10"
           >
             Rate another combo
           </button>

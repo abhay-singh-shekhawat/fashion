@@ -187,7 +187,7 @@ export default function EditProfile() {
                         type="button"
                         onClick={() => set({ skinTone: option })}
                         className={`press flex items-center gap-2 rounded-full py-2 pr-4 pl-2 ring-1 transition-colors ${
-                          active ? 'bg-white/[0.08] ring-brand-primary/60' : 'ring-white/10'
+                          active ? 'glass-tile ring-brand-primary/60' : 'ring-white/10'
                         }`}
                       >
                         <span

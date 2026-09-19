@@ -65,7 +65,7 @@ export default function RatingHistory() {
                     className={`press shrink-0 rounded-full px-3.5 py-2 text-xs font-bold tracking-tight ring-1 transition-colors ${
                       active
                         ? 'bg-brand-lime/20 text-brand-lime ring-brand-lime/40'
-                        : 'bg-white/[0.04] text-white/55 ring-white/10 hover:text-white/80'
+                        : 'glass-tile text-white/55 ring-white/10 hover:text-white/80'
                     }`}
                   >
                     {entry.label}
@@ -149,7 +149,7 @@ function RatingRow({ rating, onOpen }) {
         onClick={onOpen}
         className="press flex min-w-0 flex-1 items-start gap-3 text-left"
       >
-        <span className="relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
+        <span className="relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl glass-tile ring-1 ring-white/10">
           {rating.imageUrl ? (
             <img src={rating.imageUrl} alt="" className="h-full w-full object-cover" />
           ) : (

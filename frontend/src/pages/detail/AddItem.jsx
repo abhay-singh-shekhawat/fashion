@@ -73,7 +73,7 @@ export default function AddItem() {
                   className={`press flex flex-col items-center gap-1.5 rounded-2xl py-3 ring-1 transition-colors ${
                     active
                       ? 'bg-brand-primary/15 ring-brand-primary/50'
-                      : 'bg-white/[0.04] ring-white/10 hover:bg-white/[0.06]'
+                      : 'glass-tile ring-white/10 hover:bg-ink-700/50'
                   }`}
                 >
                   <span className="text-xl">{CATEGORY_EMOJI[key]}</span>
@@ -115,7 +115,7 @@ export default function AddItem() {
                   className={`press rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-colors ${
                     active
                       ? 'bg-brand-cyan/15 text-brand-cyan ring-brand-cyan/40'
-                      : 'bg-white/[0.04] text-white/55 ring-white/10 hover:text-white/80'
+                      : 'glass-tile text-white/55 ring-white/10 hover:text-white/80'
                   }`}
                 >
                   {FORMALITY_LABELS[key]}

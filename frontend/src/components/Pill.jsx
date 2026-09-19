@@ -1,5 +1,5 @@
 const TONES = {
-  neutral: 'bg-white/[0.06] text-white/60 ring-1 ring-white/10',
+  neutral: 'glass-tile text-white/60 ring-1 ring-white/10',
   violet: 'bg-brand-primary/15 text-brand-primary ring-1 ring-brand-primary/25',
   lime: 'bg-brand-lime/15 text-brand-lime ring-1 ring-brand-lime/25',
   cyan: 'bg-brand-cyan/15 text-brand-cyan ring-1 ring-brand-cyan/25',

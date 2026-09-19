@@ -244,6 +244,32 @@ https://fashion.sytes.net/api/v1
 
 ---
 
+### Remove Clothing Item
+**Endpoint:** `DELETE /wardrobe/remove/item/:id`
+
+**Purpose:** Remove one piece from the user's wardrobe
+
+**Authentication Required:** Yes (Bearer Token)
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "deleted": "507f1f77bcf86cd799439014"
+}
+```
+
+**Notes:**
+- Busts the 5-minute wardrobe/suggestion caches, so the item disappears immediately.
+- The Cloudinary asset is destroyed only when no other item still references it — one
+  scanned photo can hold several pieces that share a single upload.
+
+**Error Codes:**
+- `401` - Unauthorized
+- `404` - Item not found (also returned for a malformed id)
+
+---
+
 ### 7. Get Wardrobe Suggestions (Daily Outfit)
 **Endpoint:** `GET /wardrobe/get/suggestions`
 
@@ -300,6 +326,13 @@ https://fashion.sytes.net/api/v1
 | Parameter | Type | Required | Values |
 |-----------|------|----------|--------|
 | `occasion` | string | No | Any occasion (default: "casual") |
+| `refresh` | string | No | `1` to bypass the 5-minute cache and return a different combination |
+
+**Notes:**
+- The pick is assembled from the user's own closet and ranked by the stylist model.
+- `refresh=1` never hands back the combination it is replacing: when the model lands on the
+  same outfit again, the next-ranked candidate is served instead. This is what the app's
+  "Surprise me" mode calls.
 
 **Response (200 OK):**
 ```json
@@ -420,44 +453,52 @@ saved to the closet and no points are awarded.
 
 ## Suggestion Routes
 
-### 11. Get Occasion-Based Suggestions
+### 11. Get Occasion Ideas (not from the closet)
 **Endpoint:** `GET /suggestion/get/occasion/suggestions`
 
-**Purpose:** Get AI-powered outfit suggestions for a specific occasion
+**Purpose:** Outfit ideas for an occasion written from the user's body profile, the occasion and
+today's weather. Deliberately **not** assembled from the wardrobe — this is the inspiration mode,
+the counterpart to `GET /wardrobe/api/suggestions/occasion`.
 
 **Authentication Required:** Yes (Bearer Token)
 
-**Required Parameters (Body):**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `occasion` | string | Occasion type (e.g., "office", "party", "gym", "date") |
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `occasion` | string | No | Occasion type (default: "casual"). Must be one of the occasions the app offers |
+| `refresh` | string | No | `1` to bypass the 5-minute cache and write a different set |
 
 **Response (200 OK):**
 ```json
 {
-  "responseData": {
-    "userId": "507f1f77bcf86cd799439011",
-    "temperature": 22,
-    "weatherNote": "It's currently ~22°C in Jaipur",
-    "occasion": "office",
-    "suggestions": [
-      "Formal Blazer (navy) + Dress Pants (black)",
-      "White Shirt (white) + Chinos (khaki)",
-      "Casual Blazer (grey) + Jeans (blue)"
-    ],
-    "basedOn": "ai"
-  },
-  "note": "AI-powered occasion suggestion"
+  "occasion": "office",
+  "ideas": [
+    {
+      "title": "Quiet authority",
+      "pieces": ["Navy wool overshirt", "Ecru pleated trousers", "Brown leather derbies"],
+      "why": "Warm neutrals flatter your tone and read formal without a suit."
+    }
+  ],
+  "weatherNote": "~24°C – mild",
+  "source": "ai"
 }
 ```
 
+**Notes:**
+- `source` is `ai` when the stylist model wrote the set, and `rules` when the rule-based generator
+  answered instead (model unavailable). The rules path reuses `src/utils/offlineSuggestion.js`,
+  which reads gender, skin tone and weather only.
+- Ideas are never filtered by what the user owns and never mention the wardrobe.
+
 **Error Codes:**
+- `400` - Invalid occasion
 - `401` - Unauthorized
-- `404` - Profile not found
 
-**Rewards:** 5 points awarded
+**Caching:** per user and occasion for 5 minutes; `refresh=1` skips the read.
 
-**Caching:** Results cached for 30 minutes
+**Rewards:** none. The set can be re-rolled freely, so awarding points per call would be farmable.
+Points stay on the paths that build the wardrobe: adding, scanning, rating, and styling from the
+closet.
 
 ---
 

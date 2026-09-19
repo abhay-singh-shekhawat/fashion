@@ -227,7 +227,7 @@ export default function ScanOutfit() {
               <button
                 type="button"
                 onClick={restart}
-                className="press flex-1 rounded-full bg-white/[0.06] py-3.5 text-sm font-bold ring-1 ring-white/10"
+                className="press flex-1 rounded-full glass-tile py-3.5 text-sm font-bold ring-1 ring-white/10"
               >
                 Try again
               </button>
@@ -257,7 +257,7 @@ export default function ScanOutfit() {
               <button
                 type="button"
                 onClick={restart}
-                className="press flex-1 rounded-full bg-white/[0.06] py-3.5 text-sm font-bold ring-1 ring-white/10"
+                className="press flex-1 rounded-full glass-tile py-3.5 text-sm font-bold ring-1 ring-white/10"
               >
                 Scan another
               </button>

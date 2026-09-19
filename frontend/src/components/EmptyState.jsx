@@ -4,7 +4,7 @@ export default function EmptyState({ icon, title, body, children, className = ''
       className={`flex flex-col items-center gap-3 px-6 py-12 text-center md:px-8 ${className}`}
     >
       {icon ? (
-        <div className="grid h-16 w-16 place-items-center rounded-card bg-white/[0.05] text-white/40 ring-1 ring-white/10">
+        <div className="grid h-16 w-16 place-items-center rounded-card glass-tile text-white/40 ring-1 ring-white/10">
           {icon}
         </div>
       ) : null}

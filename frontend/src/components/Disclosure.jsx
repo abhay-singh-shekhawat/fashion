@@ -48,7 +48,7 @@ export default function Disclosure({
         }
       >
         {icon ? (
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-white/50 ring-1 ring-white/10">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full glass-tile text-white/50 ring-1 ring-white/10">
             {icon}
           </span>
         ) : null}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import GlassCard from './GlassCard';
 import Pill from './Pill';
 import Disclosure from './Disclosure';
@@ -10,6 +11,9 @@ import { CATEGORY_EMOJI, CATEGORY_LABELS, bandFor, timeAgo } from '../config/the
 import { useActivityLog } from '../hooks/useActivity';
 import { useProgress } from '../hooks/useProgress';
 import { apiError } from '../services/api';
+
+/* How many timeline rows the panel shows before it starts counting instead. */
+const ACTIVITY_LIMIT = 7;
 
 const EVENT_STYLES = {
   outfit_suggested: {
@@ -52,8 +56,12 @@ const pillFor = (event) => {
 export default function ActivityPanel() {
   const activity = useActivityLog();
   const progress = useProgress();
+  const [showAll, setShowAll] = useState(false);
 
-  const events = activity.data ?? [];
+  const all = activity.data ?? [];
+  /* The panel is a glance, not an archive: the latest seven rows, with the rest
+     one tap away so capping it never puts anything out of reach. */
+  const events = showAll ? all : all.slice(0, ACTIVITY_LIMIT);
   const stats = [
     { label: 'Points', value: progress.data?.totalPoints ?? 0, tone: 'lime' },
     { label: 'Level', value: progress.data?.level ?? 1, tone: 'violet' },
@@ -75,7 +83,7 @@ export default function ActivityPanel() {
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="min-w-0 rounded-2xl bg-white/[0.04] px-1.5 py-2 text-center ring-1 ring-white/10"
+            className="min-w-0 rounded-2xl glass-tile px-1.5 py-2 text-center ring-1 ring-white/10"
           >
             <StatTile value={stat.value} label={stat.label} tone={stat.tone} className="text-center" />
           </div>
@@ -85,7 +93,9 @@ export default function ActivityPanel() {
       <Disclosure
         label="Recent activity"
         summary={
-          events.length ? `${events.length} event${events.length === 1 ? '' : 's'}` : undefined
+          all.length
+            ? `${all.length > ACTIVITY_LIMIT ? `latest ${ACTIVITY_LIMIT} of ` : ''}${all.length} event${all.length === 1 ? '' : 's'}`
+            : undefined
         }
       >
         <div className="pt-3">
@@ -136,6 +146,16 @@ export default function ActivityPanel() {
               })}
             </ol>
           )}
+
+          {all.length > ACTIVITY_LIMIT ? (
+            <button
+              type="button"
+              onClick={() => setShowAll((value) => !value)}
+              className="press mt-3 w-full text-center text-[11px] font-semibold text-brand-lime"
+            >
+              {showAll ? `Show latest ${ACTIVITY_LIMIT}` : `Show all ${all.length}`}
+            </button>
+          ) : null}
 
           {progress.data?.lastSuggestionDate ? (
             <p className="mt-3 text-[10px] text-white/30">
